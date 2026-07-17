@@ -130,25 +130,32 @@ what level" readout the user described.
 
 ## Open questions
 
-- **Request batching / latency.** The top-down walk can want several directories'
-  slices for one viewport (many siblings all big enough to open at once). Firing
-  N separate `GET /api/tree` requests per pan is chatty. Worth adding to 0002's
-  API a **batch or region query** — "children for these paths" or "everything
-  intersecting this viewport down to depth D" — so one camera move is one round
-  trip. Noted as a forward-reference in issue 0002's API-shape section.
-- **Capped slices (0002's `limit`) vs. a stable layout.** 0002 caps a directory's
-  returned children (size-sorted, top N). Zooming into the long tail below the cap
-  means either fetching more (a paged slice request) or showing an aggregated
-  "+M smaller items" tile that expands on demand. The layout must stay stable when
+- **Request batching / latency.** *(Resolved in 0002's API shape.)* The top-down
+  walk can want several directories' slices for one viewport (many siblings all
+  big enough to open at once). Firing N separate `GET /api/tree` requests per pan
+  is chatty. 0002 now specifies **`POST /api/tree/batch`**: many directories'
+  children (`depth: 1`) plus optional subtree spines (`depth > 1`, for the cold
+  fly-to waterfall) in one round trip, keyed by node `id`, generation-pinned. Two
+  things this feature must own on the **client** side: debounce to one batch per
+  settled camera frame, dedupe against the laid-out-directory cache, and cancel
+  stale in-flight batches on fast zoom-through — the endpoint affords batching but
+  the client scheduling is what caps request volume.
+- **Capped slices (0002's `limit`) vs. a stable layout.** *(Half-resolved: the
+  batch response carries `omittedTail` — count + bytes past the cap — so the
+  remainder rect can be reserved up front.)* Zooming into the long tail below the
+  cap still needs a source for the items: either a paged slice request, or the
+  "+M smaller items" tile expanding on demand. The layout must stay stable when
   that extra data arrives (append into the reserved remainder rect, don't reflow
   what's already drawn).
 - **Loading states while tiles stream in.** A just-revealed directory is a blank
   rectangle until its slice returns. Needs a placeholder fill / shimmer so
   panning doesn't flash empty boxes, the map convention.
-- **Layout stability across refreshes.** 0002 rescans in the background and
-  atomic-swaps generations. If sizes change under an open camera, interiors may
-  need re-layout — decide whether to hold a generation for the session or
-  re-flow live with a "data updated" nudge.
+- **Layout stability across refreshes.** *(Mechanism resolved: 0002's tile API is
+  generation-pinned — reads pin a `generation` and a swapped-out one returns
+  409/410.)* The remaining **product** call is what to do on that signal: hold the
+  pinned generation for the session (stable, but stale) or re-flow live with a
+  "data updated" nudge. If sizes change under an open camera, interiors may need
+  re-layout either way.
 - **Zoom vs. re-root at extreme depth.** A folder buried 12 levels deep is a
   sub-pixel speck until hugely zoomed. Likely keep an explicit click-to-enter that
   recenters the camera (or re-roots) as a teleport, coexisting with free zoom.
@@ -162,9 +169,9 @@ focus/breadcrumbs derived from the camera. This keeps the browser holding only
 what's visible — the same property that makes 0002 worth building — instead of
 re-importing the whole-tree memory problem the current model has.
 
-Sequence: land 0002 (B) first (ideally with the batch/region query below baked
-into its API shape), then this feature. Decide the two together, since this
-feature is a large part of the *why* for 0002.
+Sequence: land 0002 (B) first (with the batch tile query below —
+`POST /api/tree/batch` — baked into its API shape), then this feature. Decide the
+two together, since this feature is a large part of the *why* for 0002.
 
 ## Decision
 
@@ -172,8 +179,8 @@ feature is a large part of the *why* for 0002.
 its prerequisite ([issue 0002](../issues/0002-background-scanning-service.md)) now
 committed, this is the target navigation model — `d3-zoom` camera as source of
 truth, per-directory interiors fetched as tiles when zoom reveals them, LOD by
-on-screen size, focus/breadcrumbs derived from the camera. The batch/region query
-it needs is being folded into 0002's API from the start.
+on-screen size, focus/breadcrumbs derived from the camera. The batch tile query
+it needs (`POST /api/tree/batch`) is being folded into 0002's API from the start.
 
 Implementation waits on the store landing. The open questions above (capped-slice
 paging, request batching, loading states, refresh stability, deep-zoom teleport)
