@@ -56,6 +56,53 @@ export interface TreeSlice {
   omittedTail?: OmittedTail;
 }
 
+// --- Batch tile query (POST /api/tree/batch) — the map-navigation fetch ---
+
+/**
+ * One anchor in a batch request. Anchored by `parentId` (the common case — you
+ * already hold ids from a prior fetch) or by `path` (a cold fly-to from a URL /
+ * bookmark with no id yet). `depth` 1 (default) returns just the anchor's
+ * children; `depth > 1` returns a size-pruned subtree spine down that many levels.
+ */
+export interface TreeBatchRequest {
+  parentId?: number;
+  path?: string;
+  limit?: number;
+  depth?: number;
+}
+
+export interface TreeBatchQuery {
+  root: string;
+  generation?: number;
+  requests: TreeBatchRequest[];
+}
+
+/** One directory's children in a batch response (flat, keyed by directory id). */
+export interface TreeBatchNode {
+  children: TreeChild[];
+  childCount: number;
+  omittedTail?: OmittedTail;
+}
+
+/** The resolved anchor node for a request (so path-anchored fly-tos learn their id). */
+export interface TreeBatchResolved {
+  id: number;
+  path: string;
+  kind: NodeKind;
+  size: number;
+  childCount: number;
+}
+
+export interface TreeBatchResponse {
+  generation: number;
+  /** Per request, in order: the resolved anchor node, or null if it wasn't found. */
+  resolved: (TreeBatchResolved | null)[];
+  /** Every visited directory's children, keyed by directory id. */
+  nodes: Record<string, TreeBatchNode>;
+  /** True if a per-response cap stopped the expansion early. */
+  truncated?: boolean;
+}
+
 /** Summary of a completed scan (what the `done` event carries — no tree). */
 export interface ScanSummary {
   generation: number;

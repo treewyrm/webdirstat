@@ -29,7 +29,17 @@ refresh on top.
   Start/Stop button, staleness stamp, and schedule editor. Graceful shutdown
   checkpoints the WAL. Server bundling moved from tsup (esbuild) to **tsdown**
   (rolldown), which preserves the `node:sqlite` specifier.
-- ⬜ Milestone 3 — `POST /api/tree/batch` tile query.
+- ✅ **Milestone 3 — `POST /api/tree/batch` tile query.**
+  ([batch.ts](../../server/src/routes/batch.ts)) Many directories' children
+  (`depth: 1`, the frontier) plus size-pruned subtree spines (`depth > 1`, the
+  cold fly-to) in one round trip, response flat + keyed by directory id, with a
+  `resolved[]` array so path-anchored fly-tos learn their id. Anchors are
+  `{parentId}` (root/generation-ownership checked, no traversal surface) or
+  `{path}` (in-store traversal-guarded). Generation-pinned (410 on stale);
+  guardrails on requests-per-batch, per-level limit, depth, and a total
+  nodes-per-response budget with a `truncated` signal. Generation pinning shared
+  with the tree route ([generation.ts](../../server/src/routes/generation.ts)).
+  Client `fetchTreeBatch` helper added (consumed in M4).
 - ⬜ Milestone 4 — full pan/zoom treemap client ([feature 0002](../features/0002-pan-zoom-treemap.md)).
 
 Related: [0001 — Scaling to very large trees](0001-large-tree-scaling.md)

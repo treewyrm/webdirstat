@@ -1,4 +1,13 @@
-import type { RootSchedule, RootStatus, ScannerStatus, ScanMode, ScanRoot, TreeSlice } from "@webdirstat/shared";
+import type {
+  RootSchedule,
+  RootStatus,
+  ScannerStatus,
+  ScanMode,
+  ScanRoot,
+  TreeBatchRequest,
+  TreeBatchResponse,
+  TreeSlice,
+} from "@webdirstat/shared";
 
 export async function fetchRoots(): Promise<ScanRoot[]> {
   const res = await fetch("/api/roots");
@@ -29,6 +38,28 @@ export async function fetchTree(rootId: string, path: string, options: FetchTree
   if (res.status === 404) throw new NotScannedError();
   if (!res.ok) throw new Error(`Failed to load tree: ${res.status}`);
   return res.json() as Promise<TreeSlice>;
+}
+
+/**
+ * The tile query for map navigation: many directories' children (and optional
+ * subtree spines) in one round trip, generation-pinned. Pass an `AbortSignal` to
+ * cancel a batch made stale by fast zoom-through.
+ */
+export async function fetchTreeBatch(
+  rootId: string,
+  generation: number,
+  requests: TreeBatchRequest[],
+  signal?: AbortSignal,
+): Promise<TreeBatchResponse> {
+  const res = await fetch("/api/tree/batch", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ root: rootId, generation, requests }),
+    signal,
+  });
+  if (res.status === 410) throw new Error("410 Gone: generation swapped out");
+  if (!res.ok) throw new Error(`Batch failed: ${res.status}`);
+  return res.json() as Promise<TreeBatchResponse>;
 }
 
 /** Subscribes to the global scanner state over SSE. Returns an unsubscribe function. */

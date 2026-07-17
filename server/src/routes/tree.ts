@@ -3,9 +3,9 @@ import type { H3, H3Event } from "h3";
 import type { TreeSlice } from "@webdirstat/shared";
 import type { Config } from "../config.ts";
 import type { Store } from "../store/db.ts";
-import { currentLiveGeneration } from "../store/generations.ts";
-import { childrenOf, resolvePathToNode, rootNodeRow } from "../store/nodes.ts";
+import { childrenOf, resolvePathToNode } from "../store/nodes.ts";
 import { findRoot } from "../scan/resolve-path.ts";
+import { pinGeneration } from "./generation.ts";
 
 const DEFAULT_LIMIT = 1000;
 const MAX_LIMIT = 10_000;
@@ -31,22 +31,7 @@ export function registerTreeRoute(app: H3, config: Config, store: Store): void {
     const path = typeof query.path === "string" ? query.path : "";
     const limit = parseLimit(query.limit);
 
-    // Pin a generation: explicit if given (historical reads allowed while retained),
-    // else the current live one. A pinned-but-pruned generation is 410 Gone.
-    let generation: number;
-    if (typeof query.generation === "string") {
-      const g = Number(query.generation);
-      if (!Number.isInteger(g)) throw HTTPError.status(400, "Bad Request", { message: "Invalid generation" });
-      if (!rootNodeRow(store, root.id, g)) {
-        throw HTTPError.status(410, "Gone", { message: "Generation is no longer available; refetch the current view" });
-      }
-      generation = g;
-    } else {
-      const live = currentLiveGeneration(store, root.id);
-      if (live === undefined) throw HTTPError.status(404, "Not Found", { message: `Root "${root.id}" has not been scanned yet` });
-      generation = live;
-    }
-
+    const generation = pinGeneration(store, root.id, query.generation);
     const node = resolvePathToNode(store, root.id, generation, path);
     if (!node) throw HTTPError.status(404, "Not Found", { message: "Path not found in this generation" });
 

@@ -6,6 +6,7 @@ import { Scanner } from "./scan/scanner.ts";
 import { Scheduler } from "./scan/scheduler.ts";
 import { registerRootsRoute } from "./routes/roots.ts";
 import { registerTreeRoute } from "./routes/tree.ts";
+import { registerBatchRoute } from "./routes/batch.ts";
 import { registerScanRoutes } from "./routes/scan.ts";
 import { registerStatusRoutes } from "./routes/status.ts";
 import { registerScheduleRoutes } from "./routes/schedule.ts";
@@ -43,6 +44,7 @@ app.use(
 
 registerRootsRoute(app, config);
 registerTreeRoute(app, config, store);
+registerBatchRoute(app, config, store);
 registerScanRoutes(app, scanner);
 registerStatusRoutes(app, config, store, scanner);
 registerScheduleRoutes(app, config, store, scheduler);

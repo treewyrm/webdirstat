@@ -115,6 +115,13 @@ export function writeScanSummary(
     .run(summary.generation, summary.rootId, summary.endedMs, summary.totalBytes, summary.totalCount, summary.durationMs);
 }
 
+/** A node by id, scoped to a (root, generation) so a stale/foreign id resolves to nothing. */
+export function getNodeById(store: Store, id: number, rootId: string, generation: number): NodeRow | undefined {
+  return store.db
+    .prepare("SELECT * FROM node WHERE id = ? AND root_id = ? AND generation = ?")
+    .get(id, rootId, generation) as NodeRow | undefined;
+}
+
 /** The top node of a root's generation, or undefined if not staged/scanned. */
 export function rootNodeRow(store: Store, rootId: string, generation: number): NodeRow | undefined {
   const gen = store.db
