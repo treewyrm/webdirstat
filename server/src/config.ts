@@ -66,6 +66,12 @@ export interface Config {
   roots: ResolvedRoot[];
   /** Directory containing the built Vue client (index.html + assets). Unset in dev. */
   clientDist: string | undefined;
+  /** Path to the SQLite store file. Must be on writable storage, not the scanned share. */
+  dbPath: string;
+  /** Max concurrent readdir/lstat syscalls per scan (per-root override arrives in M2). */
+  scanConcurrency: number;
+  /** Retired generations to keep after a swap (`HISTORY_GENERATIONS`; 0 = no history). */
+  historyGenerations: number;
 }
 
 export async function loadConfig(): Promise<Config> {
@@ -74,5 +80,8 @@ export async function loadConfig(): Promise<Config> {
     host: process.env.HOST || "0.0.0.0",
     roots: await parseRoots(process.env.ROOTS),
     clientDist: process.env.CLIENT_DIST,
+    dbPath: process.env.DB_PATH || "./data/webdirstat.db",
+    scanConcurrency: Number(process.env.SCAN_CONCURRENCY) || 4,
+    historyGenerations: Math.max(0, Number(process.env.HISTORY_GENERATIONS) || 0),
   };
 }

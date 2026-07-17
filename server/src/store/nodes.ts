@@ -1,0 +1,190 @@
+import type { StatementSync } from "node:sqlite";
+import type { NodeKind, TreeChild } from "@webdirstat/shared";
+import type { Store } from "./db.ts";
+
+/** A raw node row as stored. */
+export interface NodeRow {
+  id: number;
+  generation: number;
+  root_id: string;
+  parent_id: number | null;
+  name: string;
+  kind: NodeKind;
+  size: number;
+  mtime_ms: number | null;
+  child_count: number;
+  ext: string | null;
+  error: string | null;
+}
+
+/**
+ * Prepared-statement writer for one scan into one staged generation. Holds the
+ * statements so the hot insert path reuses them. Callers drive it from the walk:
+ * insert a directory (pre-order) to get its id, insert leaves as they are seen,
+ * then update the directory's aggregate size + child_count on exit.
+ */
+export class NodeWriter {
+  private readonly insertStmt: StatementSync;
+  private readonly updateDirStmt: StatementSync;
+
+  constructor(
+    private readonly store: Store,
+    private readonly generation: number,
+    private readonly rootId: string,
+  ) {
+    this.insertStmt = store.db.prepare(
+      `INSERT INTO node (generation, root_id, parent_id, name, kind, size, mtime_ms, child_count, ext, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    this.updateDirStmt = store.db.prepare("UPDATE node SET size = ?, child_count = ?, error = ? WHERE id = ?");
+  }
+
+  private insert(
+    parentId: number | null,
+    name: string,
+    kind: NodeKind,
+    size: number,
+    mtimeMs: number | null,
+    childCount: number,
+    ext: string | null,
+    error: string | null,
+  ): number {
+    const { lastInsertRowid } = this.insertStmt.run(
+      this.generation,
+      this.rootId,
+      parentId,
+      name,
+      kind,
+      size,
+      mtimeMs,
+      childCount,
+      ext,
+      error,
+    );
+    return Number(lastInsertRowid);
+  }
+
+  /** Inserts a directory shell (aggregate filled in later via {@link updateDir}). Returns its id. */
+  insertDir(parentId: number | null, name: string, mtimeMs: number | null, error: string | null): number {
+    return this.insert(parentId, name, "directory", 0, mtimeMs, 0, null, error);
+  }
+
+  /** Inserts a leaf (file/symlink/other) whose size is already known. Returns its id. */
+  insertLeaf(
+    parentId: number,
+    name: string,
+    kind: Exclude<NodeKind, "directory">,
+    size: number,
+    mtimeMs: number | null,
+    ext: string | null,
+    error: string | null,
+  ): number {
+    return this.insert(parentId, name, kind, size, mtimeMs, 0, ext, error);
+  }
+
+  /** Fills in a directory's precomputed aggregate size, direct-child count, and read error. */
+  updateDir(id: number, size: number, childCount: number, error: string | null): void {
+    this.updateDirStmt.run(size, childCount, error, id);
+  }
+}
+
+/** Writes the accumulated per-extension rollup for a generation. */
+export function writeTypeRollup(
+  store: Store,
+  generation: number,
+  rootId: string,
+  rollup: Map<string, { bytes: number; count: number }>,
+): void {
+  const stmt = store.db.prepare(
+    "INSERT INTO type_rollup (generation, root_id, ext, total_bytes, total_count) VALUES (?, ?, ?, ?, ?)",
+  );
+  for (const [ext, { bytes, count }] of rollup) {
+    stmt.run(generation, rootId, ext, bytes, count);
+  }
+}
+
+/** Appends the tiny per-scan summary row. */
+export function writeScanSummary(
+  store: Store,
+  summary: { generation: number; rootId: string; endedMs: number; totalBytes: number; totalCount: number; durationMs: number },
+): void {
+  store.db
+    .prepare(
+      "INSERT INTO scan_summary (generation, root_id, ended_ms, total_bytes, total_count, duration_ms) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .run(summary.generation, summary.rootId, summary.endedMs, summary.totalBytes, summary.totalCount, summary.durationMs);
+}
+
+/** The top node of a root's generation, or undefined if not staged/scanned. */
+export function rootNodeRow(store: Store, rootId: string, generation: number): NodeRow | undefined {
+  const gen = store.db
+    .prepare("SELECT root_node_id FROM root_generation WHERE root_id = ? AND generation = ?")
+    .get(rootId, generation) as { root_node_id: number | null } | undefined;
+  if (!gen?.root_node_id) return undefined;
+  return store.db.prepare("SELECT * FROM node WHERE id = ?").get(gen.root_node_id) as NodeRow | undefined;
+}
+
+/**
+ * Resolves a client relative path to a stored node by walking name segments from
+ * the generation's root node. Purely in-store — no filesystem access — so it can
+ * only ever reach nodes actually under the root (symlinks are never stored, so
+ * there is no traversal escape). `..`/absolute segments are refused defensively.
+ */
+export function resolvePathToNode(
+  store: Store,
+  rootId: string,
+  generation: number,
+  relPath: string,
+): NodeRow | undefined {
+  const root = rootNodeRow(store, rootId, generation);
+  if (!root) return undefined;
+
+  const segments = relPath.split("/").filter((s) => s.length > 0 && s !== ".");
+  if (segments.some((s) => s === "..")) return undefined;
+
+  const childByName = store.db.prepare("SELECT * FROM node WHERE parent_id = ? AND name = ?");
+  let current = root;
+  for (const segment of segments) {
+    const next = childByName.get(current.id, segment) as NodeRow | undefined;
+    if (!next) return undefined;
+    current = next;
+  }
+  return current;
+}
+
+export interface Children {
+  rows: TreeChild[];
+  childCount: number;
+  omittedTail?: { count: number; bytes: number };
+}
+
+/** A directory's direct children, largest first, capped at `limit`, with the omitted tail summed. */
+export function childrenOf(store: Store, parentId: number, limit: number): Children {
+  const rows = store.db
+    .prepare(
+      `SELECT id, name, kind, size, mtime_ms, child_count, ext, error
+       FROM node WHERE parent_id = ? ORDER BY size DESC, name ASC LIMIT ?`,
+    )
+    .all(parentId, limit) as Array<Omit<NodeRow, "generation" | "root_id" | "parent_id">>;
+
+  const agg = store.db
+    .prepare("SELECT COUNT(*) AS c, COALESCE(SUM(size), 0) AS b FROM node WHERE parent_id = ?")
+    .get(parentId) as { c: number; b: number };
+
+  const children: TreeChild[] = rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    kind: r.kind,
+    size: r.size,
+    childCount: r.child_count,
+    ...(r.mtime_ms != null ? { mtimeMs: r.mtime_ms } : {}),
+    ...(r.ext != null ? { ext: r.ext } : {}),
+    ...(r.error != null ? { error: r.error } : {}),
+  }));
+
+  const shownBytes = children.reduce((sum, c) => sum + c.size, 0);
+  const omittedCount = agg.c - children.length;
+  const result: Children = { rows: children, childCount: agg.c };
+  if (omittedCount > 0) result.omittedTail = { count: omittedCount, bytes: agg.b - shownBytes };
+  return result;
+}

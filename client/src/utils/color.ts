@@ -1,4 +1,4 @@
-import type { ScanNode } from "@webdirstat/shared";
+import type { TreemapNode } from "../types";
 
 const PALETTE = [
   "#4C78A8",
@@ -27,7 +27,7 @@ function extensionOf(name: string): string {
 }
 
 /** Deterministic tile color: directories/symlinks/other get fixed neutral tones, files are colored by extension. */
-export function colorFor(node: ScanNode): string {
+export function colorFor(node: TreemapNode): string {
   if (node.error) return "#5b1f22";
   if (node.kind === "directory") return "#3a3f4b";
   if (node.kind === "symlink") return "#6b6f7a";

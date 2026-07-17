@@ -1,7 +1,22 @@
 # 0002 — Background scanning service with a persistent store
 
-Status: **Decided** — this is the chosen architecture. Full design: change (B)
-store as the load-bearing piece, change (A) background refresh on top.
+Status: **In progress** — chosen architecture, being built milestone by milestone.
+Full design: change (B) store as the load-bearing piece, change (A) background
+refresh on top.
+
+**Build progress:**
+- ✅ **Milestone 1 — the slice store (change B).** Embedded `node:sqlite`
+  ([`store/`](../../server/src/store)), generation-aware flat `node` table with the
+  decide-now schema (ext/mtime for search, `type_rollup`, `scan_summary`), a
+  streaming store-writing walk ([walk.ts](../../server/src/scan/walk.ts) +
+  [persist.ts](../../server/src/scan/persist.ts)) that stages a full re-walk and
+  atomic-swaps it in with history pruning, and
+  [`GET /api/tree`](../../server/src/routes/tree.ts) serving one size-sorted,
+  capped directory level with generation pinning. Client reworked to lazy per-level
+  slice fetching. **The whole-tree JSON blob is gone.**
+- ⬜ Milestone 2 — background refresh + scheduler (change A).
+- ⬜ Milestone 3 — `POST /api/tree/batch` tile query.
+- ⬜ Milestone 4 — full pan/zoom treemap client ([feature 0002](../features/0002-pan-zoom-treemap.md)).
 
 Related: [0001 — Scaling to very large trees](0001-large-tree-scaling.md)
 (the scaling problem this resolves),

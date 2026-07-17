@@ -1,19 +1,19 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { hierarchy, treemap, treemapSquarify, type HierarchyRectangularNode } from "d3-hierarchy";
-import type { ScanNode } from "@webdirstat/shared";
+import type { TreemapNode } from "../types";
 import { colorFor } from "../utils/color";
 
-const props = defineProps<{ node: ScanNode }>();
+const props = defineProps<{ node: TreemapNode }>();
 const emit = defineEmits<{
-  drill: [chain: ScanNode[]];
-  hover: [node: ScanNode | null];
+  drill: [chain: TreemapNode[]];
+  hover: [node: TreemapNode | null];
 }>();
 
 const wrapperRef = ref<HTMLDivElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 
-let laidOutLeaves: HierarchyRectangularNode<ScanNode>[] = [];
+let laidOutLeaves: HierarchyRectangularNode<TreemapNode>[] = [];
 let resizeObserver: ResizeObserver | undefined;
 
 function draw(): void {
@@ -36,14 +36,14 @@ function draw(): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
 
-  const root = hierarchy<ScanNode>(props.node, (d) => (d.children && d.children.length > 0 ? d.children : undefined)).sum(
+  const root = hierarchy<TreemapNode>(props.node, (d) => (d.children && d.children.length > 0 ? d.children : undefined)).sum(
     (d) => (d.children ? 0 : d.size),
   );
 
   laidOutLeaves = [];
   if (!root.value) return;
 
-  const laidOutRoot = treemap<ScanNode>().tile(treemapSquarify).paddingInner(1).size([width, height])(root);
+  const laidOutRoot = treemap<TreemapNode>().tile(treemapSquarify).paddingInner(1).size([width, height])(root);
 
   for (const leaf of laidOutRoot.leaves()) {
     const w = leaf.x1 - leaf.x0;
@@ -74,7 +74,7 @@ function draw(): void {
   }
 }
 
-function leafAt(offsetX: number, offsetY: number): HierarchyRectangularNode<ScanNode> | undefined {
+function leafAt(offsetX: number, offsetY: number): HierarchyRectangularNode<TreemapNode> | undefined {
   return laidOutLeaves.find((leaf) => offsetX >= leaf.x0 && offsetX < leaf.x1 && offsetY >= leaf.y0 && offsetY < leaf.y1);
 }
 
@@ -85,8 +85,8 @@ function onClick(event: MouseEvent): void {
   const dirNode = leaf.data.kind === "directory" ? leaf : leaf.parent;
   if (!dirNode || dirNode.data === props.node) return;
 
-  const chain: ScanNode[] = [];
-  let current: HierarchyRectangularNode<ScanNode> | null = dirNode;
+  const chain: TreemapNode[] = [];
+  let current: HierarchyRectangularNode<TreemapNode> | null = dirNode;
   while (current && current.data !== props.node) {
     chain.unshift(current.data);
     current = current.parent;
