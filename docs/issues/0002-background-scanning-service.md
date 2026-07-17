@@ -1,8 +1,12 @@
 # 0002 — Background scanning service with a persistent store
 
-Status: **Proposed**
+Status: **Decided** — this is the chosen architecture. Full design: change (B)
+store as the load-bearing piece, change (A) background refresh on top.
 
 Related: [0001 — Scaling to very large trees](0001-large-tree-scaling.md)
+(the scaling problem this resolves),
+[feature 0002 — Pan/zoom treemap](../features/0002-pan-zoom-treemap.md)
+(the navigation feature this store enables).
 
 ## Context
 
@@ -110,6 +114,16 @@ The treemap becomes **level-by-level / capped**, not one giant canvas — which
 0001's rendering section says is needed *regardless* of the storage decision,
 since millions of sub-pixel tiles are unrenderable anyway.
 
+**Forward-reference — [feature 0002 (pan/zoom treemap)](../features/0002-pan-zoom-treemap.md)
+depends on this slice API and is a large part of the *why* for it.** Map-style
+pan/zoom is a tile-fetching problem, and `GET /api/tree` is the tile server: the
+camera's viewport + zoom determine which directories' children are needed, at
+what depth. That feature wants one extra thing from this API — a **batch / region
+query** ("children for these paths", or "everything intersecting this viewport
+down to depth D") — so one camera move is one round trip instead of N per-
+directory requests. Worth shaping the endpoint for that from the start rather than
+retrofitting it; see that doc's open questions.
+
 ## Trade-offs vs the minimal fix
 
 0001 recommends **Option A (capped rollup)** as the minimal fix: scoped to one
@@ -152,4 +166,24 @@ matters, or whether "show me the big offenders" is enough — if the latter,
 
 ## Decision
 
-Not yet decided — pending discussion.
+**Decided (2026-07-17): build the full design — going all-in on the background
+service.** Rationale: the tool is meant to sit on a NAS and stay useful, and the
+on-demand "scan-and-wait then hold the whole tree" model fights that at both the
+scale ([0001](0001-large-tree-scaling.md)) and UX levels, while also capping what
+the UI can become. Sequence:
+
+1. **Change (B) — the slice store.** Embedded `node:sqlite`, flat node table,
+   directory aggregate sizes precomputed at scan time, `GET /api/tree` serving
+   one directory's size-sorted children (capped/paged). This is the load-bearing
+   piece and it's what supersedes the minimal 0001-A fix.
+2. **Change (A) — background refresh.** Scheduled + manually triggerable scan in a
+   `worker_threads` worker, full re-walk into a staging generation + atomic swap.
+   Incremental rescan deferred to v2 (with periodic full walks to correct drift).
+3. **Shape the API for what's next.** Bake the **batch / region query** (see the
+   API-shape note above) in from the start so
+   [feature 0002 (pan/zoom treemap)](../features/0002-pan-zoom-treemap.md) —
+   whose map-tile fetching this store serves directly — doesn't force a
+   retrofit.
+
+Open points below (scan load, staleness UX, DB lifecycle, concurrency) are
+build-time details to handle, not blockers on the direction.
