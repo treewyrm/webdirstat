@@ -45,9 +45,15 @@ ENV PORT=8080
 ENV HOST=0.0.0.0
 ENV CLIENT_DIST=/app/client-dist
 ENV ROOTS=Data=/data
+# The SQLite store must live on WRITABLE storage — never the read-only scanned share.
+ENV DB_PATH=/db/webdirstat.db
+
+# Writable store dir, owned by the unprivileged runtime user before it becomes a volume.
+RUN mkdir -p /db && chown node:node /db
 
 EXPOSE 8080
-VOLUME ["/data"]
+# /data: read-only scanned share(s). /db: writable store.
+VOLUME ["/data", "/db"]
 
 USER node
 CMD ["node", "server/dist/index.js"]

@@ -18,7 +18,7 @@ const store = Store.open(config.dbPath);
 for (const root of config.roots) seedRootSettings(store, root.id, config.scheduleDefaults);
 
 // Resolve the worker relative to THIS entry module so it works in both dev (tsx/.ts)
-// and the bundled build (tsup/.js) — index sits one level above scan/ in both.
+// and the bundled build (tsdown/.js) — index sits one level above scan/ in both.
 const isTs = import.meta.url.endsWith(".ts");
 const workerUrl = new URL(`./scan/scan-worker${isTs ? ".ts" : ".js"}`, import.meta.url);
 const workerExecArgv = isTs ? ["--import", "tsx"] : undefined;
