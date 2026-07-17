@@ -1,0 +1,12 @@
+services:
+  webdirstat:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      # Label=host-path pairs, comma separated. Each is mounted read-only below.
+      ROOTS: "Media=/data/media,Backups=/data/backups"
+    volumes:
+      - /volume1/media:/data/media:ro
+      - /volume1/backups:/data/backups:ro
+    restart: unless-stopped

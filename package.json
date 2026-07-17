@@ -1,0 +1,16 @@
+{
+  "name": "webdirstat",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@11.8.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter ./server --filter ./client run dev",
+    "build": "pnpm --filter ./client run build && pnpm --filter ./server run build",
+    "start": "pnpm --filter ./server run start",
+    "typecheck": "pnpm --filter ./shared --filter ./server --filter ./client run typecheck",
+    "lint": "pnpm --filter ./server --filter ./client run lint"
+  }
+}

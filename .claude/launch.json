@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "webdirstat-server",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["ROOTS=Shared=/Users/treewyrm/Desktop/webdirstat", "PORT=3000", "pnpm", "--filter", "./server", "run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "webdirstat-client",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "./client", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}

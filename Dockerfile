@@ -1,0 +1,53 @@
+# syntax=docker/dockerfile:1
+
+FROM node:24-alpine AS base
+RUN corepack enable && corepack prepare pnpm@11.8.0 --activate
+WORKDIR /app
+
+# ---- deps + build (dev deps included) ----
+FROM base AS builder
+
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./
+COPY shared/package.json ./shared/package.json
+COPY server/package.json ./server/package.json
+COPY client/package.json ./client/package.json
+
+RUN pnpm install --frozen-lockfile
+
+COPY shared ./shared
+COPY server ./server
+COPY client ./client
+
+RUN pnpm --filter ./client run build
+RUN pnpm --filter ./server run build
+
+# ---- production dependencies only ----
+FROM base AS prod-deps
+
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY shared/package.json ./shared/package.json
+COPY server/package.json ./server/package.json
+
+RUN pnpm install --prod --frozen-lockfile --filter @webdirstat/server...
+
+# ---- final runtime image ----
+FROM node:24-alpine AS runtime
+ENV NODE_ENV=production
+WORKDIR /app
+
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/server/node_modules ./server/node_modules
+COPY --from=prod-deps /app/shared ./shared
+COPY --from=builder /app/server/dist ./server/dist
+COPY --from=builder /app/client/dist ./client-dist
+
+ENV PORT=8080
+ENV HOST=0.0.0.0
+ENV CLIENT_DIST=/app/client-dist
+ENV ROOTS=Data=/data
+
+EXPOSE 8080
+VOLUME ["/data"]
+
+USER node
+CMD ["node", "server/dist/index.js"]

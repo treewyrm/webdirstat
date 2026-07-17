@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -s https://raw.githubusercontent.com/unjs/h3/main/README.md)",
+      "Bash(curl -s \"https://api.github.com/repos/h3js/h3/contents/\")",
+      "Bash(curl -s \"https://api.github.com/repos/h3js/h3/contents/examples\")",
+      "Bash(curl -s \"https://api.github.com/repos/h3js/h3/contents/playground\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/h3js/h3/main/package.json\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/h3js/h3/main/examples/server-sent-events.mjs\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/h3js/h3/main/examples/middleware.mjs\")",
+      "Bash(pnpm -v)"
+    ]
+  }
+}
