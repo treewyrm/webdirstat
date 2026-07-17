@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { ScanRoot } from "@webdirstat/shared";
+import type { RootSchedule, ScanRoot } from "@webdirstat/shared";
+import { parseDuration, parseWindows } from "./scan/schedule.ts";
 
 export interface ResolvedRoot extends ScanRoot {
   /** Absolute host path this root points to. Never sent to the client. */
@@ -68,20 +69,42 @@ export interface Config {
   clientDist: string | undefined;
   /** Path to the SQLite store file. Must be on writable storage, not the scanned share. */
   dbPath: string;
-  /** Max concurrent readdir/lstat syscalls per scan (per-root override arrives in M2). */
-  scanConcurrency: number;
-  /** Retired generations to keep after a swap (`HISTORY_GENERATIONS`; 0 = no history). */
-  historyGenerations: number;
+  /** Env-seeded per-root schedule defaults, written to `root_settings` on first run. */
+  scheduleDefaults: RootSchedule;
+}
+
+const HOUR_MS = 3_600_000;
+
+function defaultTimezone(): string {
+  return process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
 export async function loadConfig(): Promise<Config> {
+  const concurrency = Number(process.env.SCAN_CONCURRENCY) || 4;
+  const historyGenerations = Math.max(0, Number(process.env.HISTORY_GENERATIONS) || 0);
+  const intervalMs = parseDuration(process.env.SCAN_INTERVAL);
+  const windows = parseWindows(process.env.SCAN_WINDOWS);
+  // Automatic scanning is opt-in: on if the operator expressed any schedule intent.
+  const enabled =
+    process.env.SCAN_ENABLED != null
+      ? process.env.SCAN_ENABLED === "true" || process.env.SCAN_ENABLED === "1"
+      : intervalMs != null || windows.length > 0;
+
   return {
     port: Number(process.env.PORT) || 3000,
     host: process.env.HOST || "0.0.0.0",
     roots: await parseRoots(process.env.ROOTS),
     clientDist: process.env.CLIENT_DIST,
     dbPath: process.env.DB_PATH || "./data/webdirstat.db",
-    scanConcurrency: Number(process.env.SCAN_CONCURRENCY) || 4,
-    historyGenerations: Math.max(0, Number(process.env.HISTORY_GENERATIONS) || 0),
+    scheduleDefaults: {
+      enabled,
+      concurrency,
+      intervalMs,
+      windows,
+      timezone: defaultTimezone(),
+      minIntervalMs: parseDuration(process.env.SCAN_MIN_INTERVAL) ?? HOUR_MS,
+      onWindowEnd: process.env.SCAN_ON_WINDOW_END === "abort" ? "abort" : "finish",
+      historyGenerations,
+    },
   };
 }

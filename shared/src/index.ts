@@ -6,4 +6,12 @@ export type {
   TreeSlice,
   ScanSummary,
   ScanEvent,
+  ScanTrigger,
+  ScanProgress,
+  ScannerState,
+  ScannerStatus,
+  ScanMode,
+  ScheduleWindow,
+  RootSchedule,
+  RootStatus,
 } from "./types.ts";

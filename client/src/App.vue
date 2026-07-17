@@ -1,32 +1,56 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
-import type { ScanEvent, ScanRoot, ScanSummary, TreeChild, TreeSlice } from "@webdirstat/shared";
-import { fetchRoots, fetchTree, NotScannedError, startScan } from "./api";
+import type { RootStatus, ScannerStatus, ScanRoot, TreeChild, TreeSlice } from "@webdirstat/shared";
+import {
+  fetchRootStatus,
+  fetchRoots,
+  fetchTree,
+  NotScannedError,
+  startScan,
+  stopScan,
+  subscribeStatus,
+} from "./api";
 import type { TreemapNode } from "./types";
-import { formatBytes, formatCount } from "./utils/format";
+import { formatAgo, formatBytes, formatCount, formatUntil } from "./utils/format";
 import Treemap from "./components/Treemap.vue";
+import ScheduleEditor from "./components/ScheduleEditor.vue";
 
 const roots = ref<ScanRoot[]>([]);
 const selectedRootId = ref<string>("");
 
-const scanning = ref(false);
+const scanner = shallowRef<ScannerStatus>({ state: { phase: "idle" }, queue: [] });
+const rootStatus = shallowRef<RootStatus | null>(null);
 const scanError = ref<string | null>(null);
 const notScanned = ref(false);
-const progress = ref<{ entries: number; bytes: number; path: string } | null>(null);
-const lastScanSummary = ref<ScanSummary | null>(null);
+const showSchedule = ref(false);
 
 /** The generation every read in this session pins. */
 const generation = ref<number | null>(null);
-/** Breadcrumb of loaded slices, root → current focus. Each slice is one directory level. */
+/** Breadcrumb of loaded slices, root → current focus. */
 const stack = shallowRef<TreeSlice[]>([]);
 const focus = computed<TreeSlice | null>(() => stack.value.at(-1) ?? null);
 const hoveredNode = shallowRef<TreemapNode | null>(null);
 
-let cancelScan: (() => void) | null = null;
+let unsubscribe: (() => void) | null = null;
+let statusTimer: ReturnType<typeof setInterval> | null = null;
+
+const globalScanning = computed(() => scanner.value.state.phase !== "idle");
+const rootLabel = (id: string) => roots.value.find((r) => r.id === id)?.label ?? id;
+
+/** Live progress line derived from the global scanner state. */
+const scanLine = computed<string | null>(() => {
+  const s = scanner.value.state;
+  if (s.phase === "idle") return null;
+  const who = `${rootLabel(s.root)} (${s.trigger})`;
+  if (s.phase === "swapping") return `Swapping in ${who}…`;
+  if (s.progress) {
+    return `Scanning ${who}: ${formatCount(s.progress.entries)} entries · ${formatBytes(s.progress.bytes)} · ${s.progress.path}`;
+  }
+  return `Scanning ${who}…`;
+});
 
 const sortedChildren = computed<TreeChild[]>(() => focus.value?.children ?? []);
 
-/** One-level treemap node synthesized from the focused slice (nested layout is M4). */
 const treemapNode = computed<TreemapNode | null>(() => {
   const f = focus.value;
   if (!f) return null;
@@ -55,12 +79,47 @@ onMounted(async () => {
   } catch (error) {
     scanError.value = error instanceof Error ? error.message : String(error);
   }
+  unsubscribe = subscribeStatus(onStatus);
+  // Keep relative "last scanned"/"next" stamps fresh even while idle.
+  statusTimer = setInterval(() => void refreshRootStatus(), 30_000);
 });
 
-onBeforeUnmount(() => cancelScan?.());
+onBeforeUnmount(() => {
+  unsubscribe?.();
+  if (statusTimer) clearInterval(statusTimer);
+});
 
-// Load whatever is already in the store whenever the selected root changes.
-watch(selectedRootId, () => void loadRoot());
+watch(selectedRootId, () => {
+  void loadRoot();
+  void refreshRootStatus();
+});
+
+let wasScanning = false;
+function onStatus(status: ScannerStatus): void {
+  scanner.value = status;
+  const scanningNow = status.state.phase !== "idle";
+  // On any transition back to idle, refresh the selected root — a scan (ours or the
+  // scheduler's) may have produced a new generation to load.
+  if (wasScanning && !scanningNow) void onScanSettled();
+  wasScanning = scanningNow;
+}
+
+async function onScanSettled(): Promise<void> {
+  const status = await refreshRootStatus();
+  if (status && status.generation != null && status.generation !== generation.value) {
+    void loadRoot();
+  }
+}
+
+async function refreshRootStatus(): Promise<RootStatus | null> {
+  if (!selectedRootId.value) return null;
+  try {
+    rootStatus.value = await fetchRootStatus(selectedRootId.value);
+    return rootStatus.value;
+  } catch {
+    return null;
+  }
+}
 
 /** Fetches the root slice of the selected root from its live generation (if scanned). */
 async function loadRoot(): Promise<void> {
@@ -80,36 +139,16 @@ async function loadRoot(): Promise<void> {
   }
 }
 
-function beginScan(): void {
-  if (!selectedRootId.value || scanning.value) return;
-  const rootId = selectedRootId.value;
-
-  cancelScan?.();
-  scanning.value = true;
+async function onStartStop(): Promise<void> {
   scanError.value = null;
-  progress.value = null;
-
-  cancelScan = startScan(rootId, {
-    onEvent: (event: ScanEvent) => {
-      if (event.type === "progress") {
-        progress.value = { entries: event.entries, bytes: event.bytes, path: event.path };
-      } else if (event.type === "done") {
-        scanning.value = false;
-        lastScanSummary.value = event.summary;
-        void loadRoot();
-      } else if (event.type === "error") {
-        scanning.value = false;
-        scanError.value = event.message;
-      }
-    },
-    onError: () => {
-      scanning.value = false;
-      scanError.value = "Connection to the server was lost.";
-    },
-  });
+  try {
+    if (globalScanning.value) await stopScan();
+    else await startScan(selectedRootId.value);
+  } catch (error) {
+    scanError.value = error instanceof Error ? error.message : String(error);
+  }
 }
 
-/** Drills into a child directory by fetching its slice and pushing it on the stack. */
 async function drillChild(node: { name: string; kind: string } | undefined): Promise<void> {
   const parent = focus.value;
   if (!parent || !node || node.kind !== "directory") return;
@@ -118,7 +157,6 @@ async function drillChild(node: { name: string; kind: string } | undefined): Pro
     const slice = await fetchTree(selectedRootId.value, path, { generation: generation.value ?? undefined });
     stack.value = [...stack.value, slice];
   } catch (error) {
-    // A pinned generation that has been swapped/pruned out → re-seed from the live root.
     if (error instanceof Error && /410|Gone/.test(error.message)) void loadRoot();
     else scanError.value = error instanceof Error ? error.message : String(error);
   }
@@ -138,25 +176,34 @@ function percentOfFocus(node: TreeChild): number {
   <div class="app">
     <header class="toolbar">
       <h1>WebDirStat</h1>
-      <select v-model="selectedRootId" :disabled="scanning || roots.length === 0">
+      <select v-model="selectedRootId" :disabled="roots.length === 0">
         <option v-for="root in roots" :key="root.id" :value="root.id">{{ root.label }}</option>
       </select>
-      <button :disabled="!selectedRootId || scanning" @click="beginScan">
-        {{ scanning ? "Scanning…" : "Scan" }}
+      <button :disabled="!selectedRootId" @click="onStartStop">
+        {{ globalScanning ? "Stop" : "Scan" }}
       </button>
+      <button class="ghost" :class="{ active: showSchedule }" @click="showSchedule = !showSchedule">Schedule</button>
 
-      <div v-if="scanning && progress" class="status">
-        {{ formatCount(progress.entries) }} entries · {{ formatBytes(progress.bytes) }} · {{ progress.path }}
-      </div>
-      <div v-else-if="lastScanSummary" class="status">
-        {{ formatCount(lastScanSummary.entries) }} entries · {{ formatBytes(lastScanSummary.bytes) }} in
-        {{ (lastScanSummary.durationMs / 1000).toFixed(1) }}s · gen {{ lastScanSummary.generation }}
-      </div>
-      <div v-else-if="generation != null" class="status">
-        stored data · gen {{ generation }}
+      <div v-if="scanLine" class="status">{{ scanLine }}</div>
+      <div v-else-if="rootStatus" class="status">
+        <template v-if="rootStatus.generation != null">
+          {{ formatCount(rootStatus.totalCount ?? 0) }} entries ·
+          {{ formatBytes(rootStatus.totalBytes ?? 0) }} ·
+          scanned {{ formatAgo(rootStatus.lastScanEndedAt) }}
+          <span v-if="rootStatus.lastScanStatus && rootStatus.lastScanStatus !== 'ok'" class="badge">
+            ({{ rootStatus.lastScanStatus }})
+          </span>
+          <span v-if="rootStatus.enabled && rootStatus.nextScanAt" class="muted">
+            · next {{ formatUntil(rootStatus.nextScanAt) }}
+          </span>
+          <span v-else-if="!rootStatus.enabled" class="muted">· manual only</span>
+        </template>
+        <template v-else>not scanned yet</template>
       </div>
       <div v-if="scanError" class="status error">{{ scanError }}</div>
     </header>
+
+    <ScheduleEditor v-if="showSchedule && selectedRootId" :root-id="selectedRootId" @saved="refreshRootStatus" />
 
     <nav v-if="stack.length > 0" class="breadcrumbs">
       <button v-for="(slice, index) in stack" :key="index" @click="jumpTo(index)">
@@ -197,10 +244,10 @@ function percentOfFocus(node: TreeChild): number {
       </section>
     </main>
 
-    <p v-else-if="notScanned && !scanning" class="placeholder">
+    <p v-else-if="notScanned" class="placeholder">
       This root hasn't been scanned yet. Hit Scan to build the store.
     </p>
-    <p v-else-if="!scanning" class="placeholder">Pick a root and hit Scan to see where your space went.</p>
+    <p v-else class="placeholder">Pick a root and hit Scan to see where your space went.</p>
   </div>
 </template>
 
@@ -225,12 +272,33 @@ function percentOfFocus(node: TreeChild): number {
   margin: 0;
 }
 
+.ghost {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.ghost.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .status {
   font-size: 0.85rem;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.status .badge {
+  color: var(--danger);
+}
+
+.status .muted {
+  color: var(--muted);
 }
 
 .status.error {

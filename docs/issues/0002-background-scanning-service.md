@@ -14,7 +14,21 @@ refresh on top.
   [`GET /api/tree`](../../server/src/routes/tree.ts) serving one size-sorted,
   capped directory level with generation pinning. Client reworked to lazy per-level
   slice fetching. **The whole-tree JSON blob is gone.**
-- ⬜ Milestone 2 — background refresh + scheduler (change A).
+- ✅ **Milestone 2 — background refresh + scheduler (change A).** Scan runs in a
+  `worker_threads` worker ([scan-worker.ts](../../server/src/scan/scan-worker.ts))
+  with its own DB connection (WAL: one writer, concurrent readers). Observable
+  single-flight state machine ([scanner.ts](../../server/src/scan/scanner.ts)) —
+  `idle → scanning → swapping → idle`, `queue`/`preempt`/stop — exposed over
+  `GET /api/status` (SSE). Scheduler ([scheduler.ts](../../server/src/scan/scheduler.ts))
+  composes the freshness + window gates with a sleep-to-next-instant timer;
+  timezone-aware weekly windows incl. cross-midnight and `onWindowEnd` abort
+  ([schedule.ts](../../server/src/scan/schedule.ts)). DB-backed per-root settings
+  seeded from env (`SCAN_INTERVAL`, `SCAN_WINDOWS`, `SCAN_CONCURRENCY`,
+  `HISTORY_GENERATIONS`, …), editable via `GET`/`PUT /api/roots/:id/schedule`.
+  Persisted `lastScan*` defeats a restart-storm rescan. Client gets a live
+  Start/Stop button, staleness stamp, and schedule editor. Graceful shutdown
+  checkpoints the WAL. Server bundling moved from tsup (esbuild) to **tsdown**
+  (rolldown), which preserves the `node:sqlite` specifier.
 - ⬜ Milestone 3 — `POST /api/tree/batch` tile query.
 - ⬜ Milestone 4 — full pan/zoom treemap client ([feature 0002](../features/0002-pan-zoom-treemap.md)).
 

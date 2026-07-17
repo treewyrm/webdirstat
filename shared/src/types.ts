@@ -70,3 +70,82 @@ export type ScanEvent =
   | { type: "progress"; entries: number; bytes: number; path: string }
   | { type: "done"; summary: ScanSummary }
   | { type: "error"; message: string };
+
+// --- Milestone 2: background scanner state, per-root status, schedule ---
+
+/** Why a scan is running: the scheduler, a plain manual start, or a manual preempt. */
+export type ScanTrigger = "scheduled" | "manual" | "preempt";
+
+export interface ScanProgress {
+  entries: number;
+  bytes: number;
+  path: string;
+}
+
+/**
+ * The single global scanner's state, exposed verbatim so the UI is a direct
+ * reflection of it. There is one scanner across all roots (scans are serialized).
+ */
+export type ScannerState =
+  | { phase: "idle" }
+  | { phase: "scanning"; root: string; startedAt: number; trigger: ScanTrigger; progress: ScanProgress | null }
+  | { phase: "swapping"; root: string; startedAt: number; trigger: ScanTrigger };
+
+export interface ScannerStatus {
+  state: ScannerState;
+  /** Roots waiting behind the running scan, in order. */
+  queue: Array<{ root: string; trigger: ScanTrigger }>;
+}
+
+/** How a manual scan interacts with an in-flight one. */
+export type ScanMode = "queue" | "preempt";
+
+/** A weekly-recurring allowed window, in local wall-clock time (evaluated against `timezone`). */
+export interface ScheduleWindow {
+  /** Days of week the window applies to, 0=Sunday … 6=Saturday. */
+  days: number[];
+  /** Local start time "HH:MM". */
+  from: string;
+  /** Local end time "HH:MM"; may be <= `from` to cross midnight. */
+  to: string;
+}
+
+/** Per-root schedule + scan config (DB-backed, env-seeded, UI-editable). */
+export interface RootSchedule {
+  /** Master switch: when false, automatic scans never fire (manual still works). */
+  enabled: boolean;
+  /** Max concurrent syscalls for this root's walk. */
+  concurrency: number;
+  /** Max-staleness target; null = no freshness gate (scan whenever a window opens). */
+  intervalMs: number | null;
+  /** Allowed wall-clock windows; empty = always permitted. */
+  windows: ScheduleWindow[];
+  /** IANA timezone the windows are evaluated in. */
+  timezone: string;
+  /** Hard minimum gap between scans. */
+  minIntervalMs: number;
+  /** What to do if a window closes mid-scan. */
+  onWindowEnd: "finish" | "abort";
+  /** Retired generations to keep after a swap (0 = no history). */
+  historyGenerations: number;
+}
+
+/** Per-root facts for the UI: freshness, totals, scheduler state. */
+export interface RootStatus {
+  root: string;
+  /** Live generation, or null if never scanned. */
+  generation: number | null;
+  lastScanStartedAt: number | null;
+  lastScanEndedAt: number | null;
+  lastScanStatus: "ok" | "aborted" | "error" | null;
+  totalBytes: number | null;
+  totalCount: number | null;
+  /** Scheduler master switch. */
+  enabled: boolean;
+  /** Whether an allowed window is open right now. */
+  windowOpen: boolean;
+  /** When the next automatic scan is expected, or null if none is scheduled. */
+  nextScanAt: number | null;
+  /** This root's relation to the scanner right now. */
+  active: "scanning" | "queued" | null;
+}

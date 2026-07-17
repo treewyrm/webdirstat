@@ -1,4 +1,4 @@
-import type { ScanEvent, ScanRoot, TreeSlice } from "@webdirstat/shared";
+import type { RootSchedule, RootStatus, ScannerStatus, ScanMode, ScanRoot, TreeSlice } from "@webdirstat/shared";
 
 export async function fetchRoots(): Promise<ScanRoot[]> {
   const res = await fetch("/api/roots");
@@ -31,31 +31,57 @@ export async function fetchTree(rootId: string, path: string, options: FetchTree
   return res.json() as Promise<TreeSlice>;
 }
 
-export interface ScanHandlers {
-  onEvent: (event: ScanEvent) => void;
-  onError?: () => void;
-}
-
-/** Starts an SSE scan (writes into the store) and returns a function that closes the stream. */
-export function startScan(rootId: string, handlers: ScanHandlers): () => void {
-  const params = new URLSearchParams({ root: rootId });
-  const source = new EventSource(`/api/scan?${params.toString()}`);
-
+/** Subscribes to the global scanner state over SSE. Returns an unsubscribe function. */
+export function subscribeStatus(onStatus: (status: ScannerStatus) => void): () => void {
+  const source = new EventSource("/api/status");
   source.onmessage = (message: MessageEvent<string>) => {
     try {
-      const payload = JSON.parse(message.data) as ScanEvent;
-      handlers.onEvent(payload);
-      if (payload.type === "done" || payload.type === "error") source.close();
+      onStatus(JSON.parse(message.data) as ScannerStatus);
     } catch (error) {
-      console.error("Failed to parse scan event", error);
+      console.error("Failed to parse status event", error);
     }
   };
-
-  source.onerror = () => {
-    // Prevent the browser's default auto-reconnect from silently starting a duplicate scan.
-    source.close();
-    handlers.onError?.();
-  };
-
+  // The browser auto-reconnects EventSource on transient errors, which is what we want here.
   return () => source.close();
+}
+
+/** Starts a manual scan (force; bypasses schedule gates). */
+export async function startScan(rootId: string, mode: ScanMode = "queue"): Promise<void> {
+  const res = await fetch("/api/scan", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ root: rootId, mode }),
+  });
+  if (!res.ok) throw new Error(`Failed to start scan: ${res.status}`);
+}
+
+/** Stops the running scan (abort + drop staging; leaves the scheduler alone). */
+export async function stopScan(): Promise<void> {
+  const res = await fetch("/api/scan/stop", { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to stop scan: ${res.status}`);
+}
+
+export async function fetchRootStatus(rootId: string): Promise<RootStatus> {
+  const res = await fetch(`/api/roots/${encodeURIComponent(rootId)}/status`);
+  if (!res.ok) throw new Error(`Failed to load status: ${res.status}`);
+  return res.json() as Promise<RootStatus>;
+}
+
+export async function fetchSchedule(rootId: string): Promise<RootSchedule> {
+  const res = await fetch(`/api/roots/${encodeURIComponent(rootId)}/schedule`);
+  if (!res.ok) throw new Error(`Failed to load schedule: ${res.status}`);
+  return res.json() as Promise<RootSchedule>;
+}
+
+export async function putSchedule(rootId: string, schedule: RootSchedule): Promise<RootSchedule> {
+  const res = await fetch(`/api/roots/${encodeURIComponent(rootId)}/schedule`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(schedule),
+  });
+  if (!res.ok) {
+    const message = await res.text().catch(() => "");
+    throw new Error(`Failed to save schedule: ${res.status} ${message}`);
+  }
+  return res.json() as Promise<RootSchedule>;
 }

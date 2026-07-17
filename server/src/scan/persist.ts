@@ -14,6 +14,8 @@ import { scanTree, type WalkSink } from "./walk.ts";
 export interface PersistOptions {
   signal?: AbortSignal;
   onProgress?: (entries: number, bytes: number, path: string) => void;
+  /** Notified when the walk finishes and the atomic swap begins. */
+  onSwapping?: () => void;
   concurrency?: number;
   /** Retired generations to keep after the swap (`HISTORY_GENERATIONS`). */
   historyGenerations?: number;
@@ -35,7 +37,7 @@ export async function persistScan(
   absolutePath: string,
   options: PersistOptions = {},
 ): Promise<ScanSummary> {
-  const { signal, onProgress, concurrency = 4, historyGenerations = 0 } = options;
+  const { signal, onProgress, onSwapping, concurrency = 4, historyGenerations = 0 } = options;
   const startedAt = Date.now();
 
   const generation = allocateGeneration(store, rootId);
@@ -89,6 +91,7 @@ export async function persistScan(
   const durationMs = endedMs - startedAt;
 
   // Finalize: root pointer, rollup, summary, then the atomic swap + history prune.
+  onSwapping?.();
   setRootNode(store, rootId, generation, result.rootNodeId);
   store.transaction(() => writeTypeRollup(store, generation, rootId, rollup));
   writeScanSummary(store, {
