@@ -10,9 +10,9 @@ import {
   stopScan,
   subscribeStatus,
 } from "./api";
-import type { TreemapNode } from "./types";
+import type { WorldNode } from "./treemap/layout";
 import { formatAgo, formatBytes, formatCount, formatUntil } from "./utils/format";
-import Treemap from "./components/Treemap.vue";
+import MapTreemap from "./components/MapTreemap.vue";
 import ScheduleEditor from "./components/ScheduleEditor.vue";
 
 const roots = ref<ScanRoot[]>([]);
@@ -24,12 +24,17 @@ const scanError = ref<string | null>(null);
 const notScanned = ref(false);
 const showSchedule = ref(false);
 
-/** The generation every read in this session pins. */
-const generation = ref<number | null>(null);
-/** Breadcrumb of loaded slices, root → current focus. */
-const stack = shallowRef<TreeSlice[]>([]);
-const focus = computed<TreeSlice | null>(() => stack.value.at(-1) ?? null);
-const hoveredNode = shallowRef<TreemapNode | null>(null);
+/** The root slice passed to the map; its generation pins every read this session. */
+const seed = shallowRef<TreeSlice | null>(null);
+const generation = computed(() => seed.value?.generation ?? null);
+
+/** Camera-derived focus (breadcrumbs + list pane) reported by the map. */
+const focusChain = shallowRef<Array<{ id: number; name: string; path: string }>>([]);
+const focusChildren = shallowRef<TreeChild[]>([]);
+const focusSize = ref(0);
+const hoveredNode = shallowRef<WorldNode | null>(null);
+
+const mapRef = ref<InstanceType<typeof MapTreemap> | null>(null);
 
 let unsubscribe: (() => void) | null = null;
 let statusTimer: ReturnType<typeof setInterval> | null = null;
@@ -37,7 +42,6 @@ let statusTimer: ReturnType<typeof setInterval> | null = null;
 const globalScanning = computed(() => scanner.value.state.phase !== "idle");
 const rootLabel = (id: string) => roots.value.find((r) => r.id === id)?.label ?? id;
 
-/** Live progress line derived from the global scanner state. */
 const scanLine = computed<string | null>(() => {
   const s = scanner.value.state;
   if (s.phase === "idle") return null;
@@ -49,28 +53,7 @@ const scanLine = computed<string | null>(() => {
   return `Scanning ${who}…`;
 });
 
-const sortedChildren = computed<TreeChild[]>(() => focus.value?.children ?? []);
-
-const treemapNode = computed<TreemapNode | null>(() => {
-  const f = focus.value;
-  if (!f) return null;
-  return {
-    id: f.node.id,
-    name: f.node.name,
-    kind: f.node.kind,
-    size: f.node.size,
-    childCount: f.node.childCount,
-    children: f.children.map((c) => ({
-      id: c.id,
-      name: c.name,
-      kind: c.kind,
-      size: c.size,
-      childCount: c.childCount,
-      ...(c.ext != null ? { ext: c.ext } : {}),
-      ...(c.error != null ? { error: c.error } : {}),
-    })),
-  };
-});
+const focusPath = computed(() => focusChain.value.at(-1)?.path ?? "");
 
 onMounted(async () => {
   try {
@@ -80,7 +63,6 @@ onMounted(async () => {
     scanError.value = error instanceof Error ? error.message : String(error);
   }
   unsubscribe = subscribeStatus(onStatus);
-  // Keep relative "last scanned"/"next" stamps fresh even while idle.
   statusTimer = setInterval(() => void refreshRootStatus(), 30_000);
 });
 
@@ -98,8 +80,6 @@ let wasScanning = false;
 function onStatus(status: ScannerStatus): void {
   scanner.value = status;
   const scanningNow = status.state.phase !== "idle";
-  // On any transition back to idle, refresh the selected root — a scan (ours or the
-  // scheduler's) may have produced a new generation to load.
   if (wasScanning && !scanningNow) void onScanSettled();
   wasScanning = scanningNow;
 }
@@ -121,18 +101,17 @@ async function refreshRootStatus(): Promise<RootStatus | null> {
   }
 }
 
-/** Fetches the root slice of the selected root from its live generation (if scanned). */
+/** (Re)seed the map from the selected root's live generation. */
 async function loadRoot(): Promise<void> {
   const rootId = selectedRootId.value;
   if (!rootId) return;
   scanError.value = null;
   notScanned.value = false;
-  stack.value = [];
-  generation.value = null;
+  seed.value = null;
+  focusChain.value = [];
+  focusChildren.value = [];
   try {
-    const slice = await fetchTree(rootId, "");
-    generation.value = slice.generation;
-    stack.value = [slice];
+    seed.value = await fetchTree(rootId, "");
   } catch (error) {
     if (error instanceof NotScannedError) notScanned.value = true;
     else scanError.value = error instanceof Error ? error.message : String(error);
@@ -149,26 +128,20 @@ async function onStartStop(): Promise<void> {
   }
 }
 
-async function drillChild(node: { name: string; kind: string } | undefined): Promise<void> {
-  const parent = focus.value;
-  if (!parent || !node || node.kind !== "directory") return;
-  const path = parent.path ? `${parent.path}/${node.name}` : node.name;
-  try {
-    const slice = await fetchTree(selectedRootId.value, path, { generation: generation.value ?? undefined });
-    stack.value = [...stack.value, slice];
-  } catch (error) {
-    if (error instanceof Error && /410|Gone/.test(error.message)) void loadRoot();
-    else scanError.value = error instanceof Error ? error.message : String(error);
-  }
+function onFocus(payload: { chain: Array<{ id: number; name: string; path: string }>; children: TreeChild[]; size: number }): void {
+  focusChain.value = payload.chain;
+  focusChildren.value = payload.children;
+  focusSize.value = payload.size;
 }
 
-function jumpTo(index: number): void {
-  stack.value = stack.value.slice(0, index + 1);
+function flyToChild(child: TreeChild): void {
+  if (child.kind !== "directory") return;
+  const path = focusPath.value ? `${focusPath.value}/${child.name}` : child.name;
+  mapRef.value?.flyToPath(path);
 }
 
 function percentOfFocus(node: TreeChild): number {
-  const total = focus.value?.node.size ?? 0;
-  return total > 0 ? (node.size / total) * 100 : 0;
+  return focusSize.value > 0 ? (node.size / focusSize.value) * 100 : 0;
 }
 </script>
 
@@ -179,9 +152,7 @@ function percentOfFocus(node: TreeChild): number {
       <select v-model="selectedRootId" :disabled="roots.length === 0">
         <option v-for="root in roots" :key="root.id" :value="root.id">{{ root.label }}</option>
       </select>
-      <button :disabled="!selectedRootId" @click="onStartStop">
-        {{ globalScanning ? "Stop" : "Scan" }}
-      </button>
+      <button :disabled="!selectedRootId" @click="onStartStop">{{ globalScanning ? "Stop" : "Scan" }}</button>
       <button class="ghost" :class="{ active: showSchedule }" @click="showSchedule = !showSchedule">Schedule</button>
 
       <div v-if="scanLine" class="status">{{ scanLine }}</div>
@@ -205,48 +176,46 @@ function percentOfFocus(node: TreeChild): number {
 
     <ScheduleEditor v-if="showSchedule && selectedRootId" :root-id="selectedRootId" @saved="refreshRootStatus" />
 
-    <nav v-if="stack.length > 0" class="breadcrumbs">
-      <button v-for="(slice, index) in stack" :key="index" @click="jumpTo(index)">
-        {{ index === 0 ? slice.node.name || "/" : slice.node.name }}
+    <nav v-if="focusChain.length > 0" class="breadcrumbs">
+      <button v-for="(node, index) in focusChain" :key="index" @click="mapRef?.flyToPath(node.path)">
+        {{ index === 0 ? node.name || "/" : node.name }}
       </button>
     </nav>
 
-    <main v-if="focus" class="content">
+    <main v-if="seed" class="content">
       <aside class="list-pane">
         <div
-          v-for="child in sortedChildren"
+          v-for="child in focusChildren"
           :key="child.id"
           class="list-row"
           :class="{ error: !!child.error, dir: child.kind === 'directory' }"
-          @click="drillChild(child)"
+          @click="flyToChild(child)"
         >
           <div class="bar" :style="{ width: percentOfFocus(child) + '%' }"></div>
           <span class="name">{{ child.name }}</span>
           <span class="size">{{ formatBytes(child.size) }}</span>
         </div>
-        <p v-if="sortedChildren.length === 0" class="empty">Empty directory</p>
-        <p v-if="focus.omittedTail" class="empty">
-          + {{ formatCount(focus.omittedTail.count) }} smaller items ({{ formatBytes(focus.omittedTail.bytes) }})
-        </p>
+        <p v-if="focusChildren.length === 0" class="empty">Empty directory</p>
       </aside>
 
       <section class="treemap-pane">
-        <Treemap
-          v-if="treemapNode"
-          :node="treemapNode"
-          @drill="(chain) => drillChild(chain.at(-1))"
+        <MapTreemap
+          ref="mapRef"
+          :root-id="selectedRootId"
+          :seed="seed"
+          @focus="onFocus"
           @hover="(node) => (hoveredNode = node)"
+          @stale="loadRoot"
         />
         <div v-if="hoveredNode" class="tooltip">
           {{ hoveredNode.name }} — {{ formatBytes(hoveredNode.size) }}
           <template v-if="hoveredNode.error">({{ hoveredNode.error }})</template>
         </div>
+        <div class="hint">scroll to zoom · drag to pan · click a folder to fly in</div>
       </section>
     </main>
 
-    <p v-else-if="notScanned" class="placeholder">
-      This root hasn't been scanned yet. Hit Scan to build the store.
-    </p>
+    <p v-else-if="notScanned" class="placeholder">This root hasn't been scanned yet. Hit Scan to build the store.</p>
     <p v-else class="placeholder">Pick a root and hit Scan to see where your space went.</p>
   </div>
 </template>
@@ -397,6 +366,16 @@ function percentOfFocus(node: TreeChild): number {
   border-radius: 4px;
   font-size: 0.8rem;
   pointer-events: none;
+}
+
+.hint {
+  position: absolute;
+  bottom: 0.75rem;
+  right: 0.75rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  pointer-events: none;
+  opacity: 0.7;
 }
 
 .placeholder {

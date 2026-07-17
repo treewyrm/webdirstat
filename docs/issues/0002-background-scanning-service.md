@@ -1,8 +1,8 @@
 # 0002 — Background scanning service with a persistent store
 
-Status: **In progress** — chosen architecture, being built milestone by milestone.
-Full design: change (B) store as the load-bearing piece, change (A) background
-refresh on top.
+Status: **Done** — built milestone by milestone; all four milestones landed and
+verified end-to-end. Full design: change (B) store as the load-bearing piece,
+change (A) background refresh on top.
 
 **Build progress:**
 - ✅ **Milestone 1 — the slice store (change B).** Embedded `node:sqlite`
@@ -40,7 +40,19 @@ refresh on top.
   nodes-per-response budget with a `truncated` signal. Generation pinning shared
   with the tree route ([generation.ts](../../server/src/routes/generation.ts)).
   Client `fetchTreeBatch` helper added (consumed in M4).
-- ⬜ Milestone 4 — full pan/zoom treemap client ([feature 0002](../features/0002-pan-zoom-treemap.md)).
+- ✅ **Milestone 4 — full pan/zoom treemap client ([feature 0002](../features/0002-pan-zoom-treemap.md)).**
+  `d3-zoom` camera as source of truth over a fixed world
+  ([layout.ts](../../client/src/treemap/layout.ts) lays out one directory level at
+  a time into world rects; [MapTreemap.vue](../../client/src/components/MapTreemap.vue)
+  draws it). Level-of-detail rendering bounded by on-screen tile size; interiors
+  fetched as map tiles via `POST /api/tree/batch` when zoom reveals them, with the
+  client discipline the design calls for — debounce to one batch per settled camera
+  frame, dedupe against the laid-out tree, `AbortController`-cancel stale batches,
+  LRU eviction. Breadcrumbs + list + "current folder" **derived from the camera**
+  (deepest directory that fully contains the viewport). Click-to-fly-in with a
+  spine prefetch; animated gradient-pan shimmer on tiles awaiting data;
+  generation-pinned reads that re-seed on a swap (410). The old re-root-on-drill
+  model is gone.
 
 Related: [0001 — Scaling to very large trees](0001-large-tree-scaling.md)
 (the scaling problem this resolves),

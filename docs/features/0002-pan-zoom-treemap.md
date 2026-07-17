@@ -1,6 +1,11 @@
 # 0002 — Pan/zoom treemap (map-style navigation)
 
-Status: **Decided** — approach chosen; sequenced after its prerequisite lands.
+Status: **Done** — implemented as milestone 4 of
+[issue 0002](../issues/0002-background-scanning-service.md). `d3-zoom` camera,
+viewport-driven lazy nested layout fetching tiles via `POST /api/tree/batch`, LOD
+by on-screen size, camera-derived focus/breadcrumbs, fly-to, shimmer placeholders.
+See [MapTreemap.vue](../../client/src/components/MapTreemap.vue) +
+[layout.ts](../../client/src/treemap/layout.ts).
 
 Prerequisite: [issue 0002 — Background scanning service with a persistent
 store](../issues/0002-background-scanning-service.md), specifically its change
