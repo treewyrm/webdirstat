@@ -111,11 +111,13 @@ move together.
 
 ### Client
 
-- **Filters panel + results list** alongside the existing list pane in
-  [App.vue](../../client/src/App.vue). Structured inputs (size min/max, extension,
-  age, name-contains) + a here/everywhere toggle — **not** a raw query language
-  (over-scope, per the original note). Size-desc default sort; mtime/name/path as
-  options.
+- **Filters panel + results list** as one of the left side shell's tabs in
+  [App.vue](../../client/src/App.vue) (Files / Types / Search, mutually exclusive —
+  the panel is no longer an additive toolbar toggle). Structured inputs (size
+  min/max, extension, age, name-contains) + a here/everywhere toggle — **not** a raw
+  query language (over-scope, per the original note). Size-desc default sort;
+  mtime/name/path as options. Results render two lines — filename + size on top, the
+  muted directory below (clipped from the left so the filename is never truncated).
 - **Reveal-in-map** reuses `flyToPath`, but with a seeding step: today
   [flyToPath](../../client/src/components/MapTreemap.vue#L622) walks the in-memory
   `worldRoot` and `break`s when a segment isn't laid out — a deep result won't be.

@@ -88,7 +88,7 @@ Adopted the recommendation. The walk fills `type_rollup` in its single pass
 `typeRollupOf`/`subtreeTypeRollup` in [nodes.ts](../../server/src/store/nodes.ts)),
 generation-pinned and capped like the tree reads. The route's `path` param scopes it:
 "" reads the precomputed table, a subpath aggregates that subtree on demand. The
-client shows a toggled "By type" panel
+client shows the "By type" panel as the **Types** tab of the left side shell
 ([TypeList.vue](../../client/src/components/TypeList.vue)) that tracks the focused
 folder (debounced) and whose swatches reuse the treemap's extension coloring
 (`colorForExt`, [color.ts](../../client/src/utils/color.ts)). Extension-less files

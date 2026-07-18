@@ -149,11 +149,19 @@ detail by on-screen size. Client discipline the design requires: debounce to one
 camera frame, dedupe against an LRU of laid-out directories, `AbortController`-cancel stale batches,
 and evict interiors far outside the viewport. Just-revealed tiles show an animated gradient-pan
 shimmer until their data arrives. [client/src/App.vue](client/src/App.vue) seeds the map, reflects
-the `@focus` event into breadcrumbs/list, and drives fly-to via a ref; it also owns the scanner
-status SSE, the Start/Stop control, the staleness stamp, and the
-[ScheduleEditor.vue](client/src/components/ScheduleEditor.vue). Tile colors are deterministic —
-directories/symlinks get fixed neutral tones, files are colored by extension hash, the omitted-tail
-remainder tile its own tone ([client/src/utils/color.ts](client/src/utils/color.ts)).
+the `@focus` event into the breadcrumbs and the left side shell, and drives fly-to via a ref; it also
+owns the scanner status SSE, the Start/Stop control, and the staleness stamp. The left shell is a
+**tab strip** ([FileList.vue](client/src/components/FileList.vue) / [TypeList.vue](client/src/components/TypeList.vue)
+— feature 0005 — / [SearchPanel.vue](client/src/components/SearchPanel.vue) — feature 0004),
+mutually exclusive with only one pane shown at a time (defaults to Files); the shell owns
+width/border/scroll/background. All display and scan settings live behind the ⚙ button in
+[SettingsModal.vue](client/src/components/SettingsModal.vue) (feature 0007), which houses the
+**Display** ([DisplaySettings.vue](client/src/components/DisplaySettings.vue)) and **Scanning**
+(the migrated [ScheduleEditor.vue](client/src/components/ScheduleEditor.vue)) categories. Tile colors
+are deterministic — by default directories/symlinks get fixed neutral tones, files are colored by
+extension hash, and the omitted-tail remainder tile its own tone
+([client/src/utils/color.ts](client/src/utils/color.ts)); a Display toggle can instead color files by
+modification age (feature 0011), and shaded/cushion shading is an orthogonal toggle (feature 0010).
 
 ### Dev vs. production server
 
