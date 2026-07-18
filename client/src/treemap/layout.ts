@@ -1,5 +1,6 @@
 import { hierarchy, treemap, treemapSquarify } from "d3-hierarchy";
-import type { NodeKind, OmittedTail, TreeChild } from "@webdirstat/shared";
+import type { FoldedSmall, NodeKind, OmittedTail, TreeChild } from "@webdirstat/shared";
+import { formatBytes } from "../utils/format";
 
 /**
  * One node in the lazily-laid-out world tree. Coordinates are in a fixed "world"
@@ -9,8 +10,13 @@ import type { NodeKind, OmittedTail, TreeChild } from "@webdirstat/shared";
 export interface WorldNode {
   id: number;
   name: string;
-  /** "tail" is the synthetic remainder tile for children past the slice cap. */
-  kind: NodeKind | "tail";
+  /**
+   * Synthetic tile kinds beyond the real filesystem ones: "tail" is the remainder
+   * for children past the slice cap; "small" is the fold of sub-threshold files
+   * (feature 0013), whose `foldedParentId` points at the directory to re-fetch
+   * unfolded on click.
+   */
+  kind: NodeKind | "tail" | "small";
   size: number;
   childCount: number;
   ext?: string;
@@ -26,6 +32,8 @@ export interface WorldNode {
   y1: number;
   children: WorldNode[] | null;
   omittedTail?: OmittedTail;
+  /** For a "small" tile: the id of the directory whose sub-threshold files it folds. */
+  foldedParentId?: number;
   /** Last frame this node's interior was drawn — drives LRU eviction. */
   touched: number;
 }
@@ -33,6 +41,7 @@ export interface WorldNode {
 interface LayoutItem {
   child?: TreeChild;
   tail?: OmittedTail;
+  small?: FoldedSmall;
 }
 
 /** Creates the root world node filling the given world rect (interior unloaded). */
@@ -59,7 +68,13 @@ export function makeRoot(
  * WorldNodes (interiors still unloaded). A capped slice's omitted tail becomes a
  * proportional remainder tile so layout stays stable when the rest never loads.
  */
-export function layoutInto(node: WorldNode, rows: TreeChild[], omittedTail: OmittedTail | undefined): void {
+export function layoutInto(
+  node: WorldNode,
+  rows: TreeChild[],
+  omittedTail: OmittedTail | undefined,
+  foldedSmall?: FoldedSmall,
+  minSize = 0,
+): void {
   const w = node.x1 - node.x0;
   const h = node.y1 - node.y0;
   node.omittedTail = omittedTail;
@@ -70,9 +85,18 @@ export function layoutInto(node: WorldNode, rows: TreeChild[], omittedTail: Omit
 
   const items: LayoutItem[] = rows.map((child) => ({ child }));
   if (omittedTail && omittedTail.count > 0 && omittedTail.bytes > 0) items.push({ tail: omittedTail });
+  if (foldedSmall && foldedSmall.count > 0 && foldedSmall.bytes > 0) items.push({ small: foldedSmall });
 
   const root = hierarchy<{ items?: LayoutItem[] } | LayoutItem>({ items }, (d) => ("items" in d ? d.items : undefined))
-    .sum((d) => ("child" in d && d.child ? d.child.size : "tail" in d && d.tail ? d.tail.bytes : 0))
+    .sum((d) =>
+      "child" in d && d.child
+        ? d.child.size
+        : "tail" in d && d.tail
+          ? d.tail.bytes
+          : "small" in d && d.small
+            ? d.small.bytes
+            : 0,
+    )
     .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
 
   const laid = treemap<{ items?: LayoutItem[] } | LayoutItem>()
@@ -94,6 +118,20 @@ export function layoutInto(node: WorldNode, rows: TreeChild[], omittedTail: Omit
         childCount: 0,
         path: node.path,
         depth: node.depth + 1,
+        ...rect,
+        children: [],
+        touched: 0,
+      });
+    } else if (item.small) {
+      children.push({
+        id: -2,
+        name: `+${item.small.count} under ${formatBytes(minSize)}`,
+        kind: "small",
+        size: item.small.bytes,
+        childCount: 0,
+        path: node.path,
+        depth: node.depth + 1,
+        foldedParentId: node.id,
         ...rect,
         children: [],
         touched: 0,

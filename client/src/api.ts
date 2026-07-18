@@ -26,6 +26,8 @@ export class NotScannedError extends Error {
 export interface FetchTreeOptions {
   limit?: number;
   generation?: number;
+  /** Fold direct files under this many bytes into a `foldedSmall` aggregate (feature 0013). */
+  minSize?: number;
 }
 
 /** Fetches one directory level (size-sorted, capped) from the store. */
@@ -34,6 +36,7 @@ export async function fetchTree(rootId: string, path: string, options: FetchTree
   if (path) params.set("path", path);
   if (options.limit != null) params.set("limit", String(options.limit));
   if (options.generation != null) params.set("generation", String(options.generation));
+  if (options.minSize) params.set("minSize", String(options.minSize));
 
   const res = await fetch(`/api/tree?${params.toString()}`);
   if (res.status === 404) throw new NotScannedError();

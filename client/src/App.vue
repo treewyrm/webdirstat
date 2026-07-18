@@ -82,6 +82,13 @@ watch(selectedRootId, () => {
   void refreshRootStatus();
 });
 
+// The fold threshold (feature 0013) is applied server-side, so changing it re-seeds
+// the map from a freshly folded root slice; the map reseeds off the new seed object.
+watch(
+  () => settings.minSize,
+  () => void loadRoot(),
+);
+
 let wasScanning = false;
 function onStatus(status: ScannerStatus): void {
   scanner.value = status;
@@ -117,7 +124,7 @@ async function loadRoot(): Promise<void> {
   focusChain.value = [];
   focusChildren.value = [];
   try {
-    seed.value = await fetchTree(rootId, "");
+    seed.value = await fetchTree(rootId, "", { minSize: settings.minSize });
   } catch (error) {
     if (error instanceof NotScannedError) notScanned.value = true;
     else scanError.value = error instanceof Error ? error.message : String(error);

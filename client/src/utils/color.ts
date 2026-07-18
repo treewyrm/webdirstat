@@ -2,12 +2,15 @@ import type { NodeKind } from "@webdirstat/shared";
 
 /** The minimal shape needed to pick a color (satisfied by the map's WorldNode). */
 export interface Colorable {
-  kind: NodeKind | "tail";
+  kind: NodeKind | "tail" | "small";
   name: string;
   error?: string;
   /** Modification time, for the age color mode. */
   mtimeMs?: number;
 }
+
+/** The neutral tone for the "small files" fold tile (feature 0013) — distinct from the tail tile. */
+export const SMALL_TILE_COLOR = "#2c3138";
 
 /** How tiles are colored: by extension identity (default) or by modification age. */
 export type ColorMode = "type" | "age";
@@ -62,6 +65,7 @@ export function colorFor(node: Colorable): string {
   if (node.kind === "directory") return "#3a3f4b";
   if (node.kind === "symlink") return "#6b6f7a";
   if (node.kind === "other") return "#4a4e58";
+  if (node.kind === "small") return SMALL_TILE_COLOR;
 
   return colorForExt(extensionOf(node.name));
 }

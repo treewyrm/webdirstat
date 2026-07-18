@@ -234,20 +234,39 @@ export interface Children {
   rows: TreeChild[];
   childCount: number;
   omittedTail?: { count: number; bytes: number };
+  foldedSmall?: { count: number; bytes: number };
 }
 
-/** A directory's direct children, largest first, capped at `limit`, with the omitted tail summed. */
-export function childrenOf(store: Store, parentId: number, limit: number): Children {
+/**
+ * A directory's direct children, largest first, capped at `limit`, with the omitted
+ * tail summed. When `minSize > 0`, direct **files** below that byte threshold are
+ * folded out of the rows into a separate `foldedSmall` aggregate (feature 0013,
+ * Model A) — directories are never folded. The two buckets are disjoint by
+ * construction: folded files are excluded from the candidate set before the `limit`
+ * cap runs, so a file is never counted in both `foldedSmall` and `omittedTail`.
+ * The `(parent_id, size DESC)` index serves both the row scan and the tail aggregate.
+ */
+export function childrenOf(store: Store, parentId: number, limit: number, minSize = 0): Children {
+  const fold = minSize > 0 ? minSize : 0;
+
+  // `fold = 0` disables the predicate (nothing is `size < 0`), so the query is a
+  // no-op superset identical to the pre-0013 behavior.
   const rows = store.db
     .prepare(
       `SELECT id, name, kind, size, mtime_ms, child_count, ext, error
-       FROM node WHERE parent_id = ? ORDER BY size DESC, name ASC LIMIT ?`,
+       FROM node WHERE parent_id = ? AND NOT (kind = 'file' AND size < ?)
+       ORDER BY size DESC, name ASC LIMIT ?`,
     )
-    .all(parentId, limit) as Array<Omit<NodeRow, "generation" | "root_id" | "parent_id">>;
+    .all(parentId, fold, limit) as Array<Omit<NodeRow, "generation" | "root_id" | "parent_id">>;
 
   const agg = store.db
-    .prepare("SELECT COUNT(*) AS c, COALESCE(SUM(size), 0) AS b FROM node WHERE parent_id = ?")
-    .get(parentId) as { c: number; b: number };
+    .prepare(
+      `SELECT COUNT(*) AS c, COALESCE(SUM(size), 0) AS b,
+              COALESCE(SUM(CASE WHEN kind = 'file' AND size < ? THEN 1 ELSE 0 END), 0) AS fc,
+              COALESCE(SUM(CASE WHEN kind = 'file' AND size < ? THEN size ELSE 0 END), 0) AS fb
+       FROM node WHERE parent_id = ?`,
+    )
+    .get(fold, fold, parentId) as { c: number; b: number; fc: number; fb: number };
 
   const children: TreeChild[] = rows.map((r) => ({
     id: r.id,
@@ -260,9 +279,15 @@ export function childrenOf(store: Store, parentId: number, limit: number): Child
     ...(r.error != null ? { error: r.error } : {}),
   }));
 
-  const shownBytes = children.reduce((sum, c) => sum + c.size, 0);
-  const omittedCount = agg.c - children.length;
+  // childCount stays the true direct-child total; the fold is a rendering split.
   const result: Children = { rows: children, childCount: agg.c };
-  if (omittedCount > 0) result.omittedTail = { count: omittedCount, bytes: agg.b - shownBytes };
+
+  // The candidate set the cap runs over excludes the folded files.
+  const shownBytes = children.reduce((sum, c) => sum + c.size, 0);
+  const nonFoldedCount = agg.c - agg.fc;
+  const nonFoldedBytes = agg.b - agg.fb;
+  const omittedCount = nonFoldedCount - children.length;
+  if (omittedCount > 0) result.omittedTail = { count: omittedCount, bytes: nonFoldedBytes - shownBytes };
+  if (agg.fc > 0) result.foldedSmall = { count: agg.fc, bytes: agg.fb };
   return result;
 }

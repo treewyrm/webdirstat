@@ -1,6 +1,19 @@
 # 0013 — Fold small files into one tile
 
-Status: **Proposed**
+Status: **Done** — Model A (server-side data threshold), shipped & verified.
+
+Implemented across the protocol (`minSize` request field + `foldedSmall` response
+field, [shared/src/types.ts](../../shared/src/types.ts)), the store
+(`childrenOf` folds sub-threshold files disjointly from the count cap,
+[nodes.ts](../../server/src/store/nodes.ts)), both routes
+([tree.ts](../../server/src/routes/tree.ts), [batch.ts](../../server/src/routes/batch.ts)),
+and the client (a `"small"` fold tile in [layout.ts](../../client/src/treemap/layout.ts) /
+[color.ts](../../client/src/utils/color.ts), the "Fold small files" knob in
+[DisplaySettings.vue](../../client/src/components/DisplaySettings.vue), and
+unfold-on-click in [MapTreemap.vue](../../client/src/components/MapTreemap.vue)).
+Verified against a fixture: the sub-threshold files never cross the wire, `foldedSmall`
+and `omittedTail` are disjoint and sum exactly to `childCount`, directories are never
+folded, and `minSize: 0` is byte-identical to pre-0013 behavior.
 
 A directory can hold hundreds of tiny files nobody wants to look at individually.
 Fold every child below a user-defined size into a **single synthetic tile** — one
@@ -115,4 +128,31 @@ tidies the frame).
 
 ## Decision
 
-Not yet decided — pending discussion. Leaning **B first**.
+**Model A (server-side data threshold).** Chosen over B because the stated
+motivation is payload — keeping the long tail of tiny rows off the wire — which
+only A delivers; B never touches the protocol. Doing the schema change now settles
+it permanently rather than retrofitting `shared/src/types.ts` later.
+
+Settled sub-decisions:
+
+- **Absolute bytes**, not % of parent — simpler to reason about for a first cut
+  (the open question above resolves this way).
+- **Files only** (`kind === "file"`) — preserve directory structure; folding a
+  sub-threshold *directory* would hide a whole subtree by aggregate size. A
+  dirs-too toggle can come later.
+- **Two distinct tiles** — keep `omittedTail` (count cap) and `foldedSmall` (size
+  threshold) as separate tiles with separate tones in
+  [color.ts](../../client/src/utils/color.ts); confirm the two never double-count
+  the same child.
+- **Knob lives in the Display pane** — [DisplaySettings.vue](../../client/src/components/DisplaySettings.vue)
+  (feature [0007](0007-display-settings-pane.md), now Done), persisted to
+  `localStorage`, passed through as the `minSize` query param.
+
+Accepted consequence — **A is camera-independent**: a folded file stays folded
+however far you zoom in. Ship an explicit **unfold-on-click** on the small-files
+tile (refetch that directory with `minSize: 0`); do **not** rely on zoom to reveal
+folded files. B (camera-aware layout fold) can still be layered on later to also
+tidy the frame — the two coexist (A trims the wire, B tidies the frame) — but is
+out of scope for this first cut.
+
+Implementation follows "Model A" under **Shape of the change** above.

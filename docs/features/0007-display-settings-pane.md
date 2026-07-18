@@ -1,6 +1,6 @@
 # 0007 — Unified settings modal
 
-Status: **Decided**
+Status: **Done** — shipped as the ⚙ Settings modal ([SettingsModal.vue](../../client/src/components/SettingsModal.vue)) with **Display** ([DisplaySettings.vue](../../client/src/components/DisplaySettings.vue), backed by [useDisplaySettings.ts](../../client/src/composables/useDisplaySettings.ts)) and **Scanning** (migrated `ScheduleEditor`) categories; the Schedule ghost button is retired. The Display panel also absorbed the shaded-tiles ([feature 0010](0010-shaded-treemap-tiles.md)) and color-by-age ([feature 0011](0011-color-by-age.md)) toggles that landed after this was written, beyond the v1 hover-path + size-units scope.
 
 Originally scoped as a small client-local *display* pane (a ghost-toggle drawer
 mirroring the schedule editor). Reframed during planning into a single **settings

@@ -18,11 +18,18 @@ const TreeQuery = z.object({
   path: z.string().default(""),
   limit: z.coerce.number().catch(DEFAULT_LIMIT).default(DEFAULT_LIMIT),
   generation: z.string().optional(),
+  minSize: z.coerce.number().catch(0).default(0),
 });
 
 function clampLimit(n: number): number {
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_LIMIT;
   return Math.min(Math.floor(n), MAX_LIMIT);
+}
+
+/** Fold-threshold floor: garbage or negatives disable folding. */
+function clampMinSize(n: number): number {
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n);
 }
 
 /**
@@ -38,12 +45,13 @@ export const registerTreeRoute: RouteFactory = ({ app, config, store }) => {
 
       const root = findRoot(config.roots, query.root);
       const limit = clampLimit(query.limit);
+      const minSize = clampMinSize(query.minSize);
 
       const generation = pinGeneration(store, root.id, query.generation);
       const node = resolvePathToNode(store, root.id, generation, query.path);
       if (!node) throw HTTPError.status(404, "Not Found", { message: "Path not found in this generation" });
 
-      const children = node.kind === "directory" ? childrenOf(store, node.id, limit) : { rows: [], childCount: 0 };
+      const children = node.kind === "directory" ? childrenOf(store, node.id, limit, minSize) : { rows: [], childCount: 0 };
 
       const slice: TreeSlice = {
         generation,
@@ -54,6 +62,7 @@ export const registerTreeRoute: RouteFactory = ({ app, config, store }) => {
         childCount: children.childCount,
       };
       if ("omittedTail" in children && children.omittedTail) slice.omittedTail = children.omittedTail;
+      if ("foldedSmall" in children && children.foldedSmall) slice.foldedSmall = children.foldedSmall;
       return slice;
     }),
   );

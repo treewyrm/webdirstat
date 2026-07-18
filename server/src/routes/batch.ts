@@ -37,6 +37,7 @@ const BatchBody = z.object({
       path: z.string().optional(),
       limit: z.number().optional(),
       depth: z.number().optional(),
+      minSize: z.number().optional(),
     })
     .array()
     .max(MAX_REQUESTS),
@@ -78,6 +79,7 @@ export const registerBatchRoute: RouteFactory = ({ app, config, store }) => {
 
         const depth = clamp(request.depth ?? 1, 1, MAX_DEPTH);
         const limit = clamp(request.limit ?? DEFAULT_LIMIT, 1, MAX_LIMIT);
+        const minSize = request.minSize != null && request.minSize > 0 ? Math.floor(request.minSize) : 0;
         const threshold = anchor.size * SIZE_FRACTION;
 
         // Breadth-first expansion down to `depth`, size-pruning small interiors.
@@ -90,9 +92,10 @@ export const registerBatchRoute: RouteFactory = ({ app, config, store }) => {
             break;
           }
 
-          const slice = childrenOf(store, frame.id, limit);
+          const slice = childrenOf(store, frame.id, limit, minSize);
           const entry: TreeBatchNode = { children: slice.rows, childCount: slice.childCount };
           if (slice.omittedTail) entry.omittedTail = slice.omittedTail;
+          if (slice.foldedSmall) entry.foldedSmall = slice.foldedSmall;
           nodes[frame.id] = entry;
           budget -= slice.rows.length;
 

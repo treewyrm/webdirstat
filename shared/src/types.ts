@@ -33,6 +33,18 @@ export interface OmittedTail {
   bytes: number;
 }
 
+/**
+ * Aggregate of the sub-threshold **files** folded out of a slice by a `minSize`
+ * request (feature 0013, Model A). Same shape as {@link OmittedTail} but a distinct
+ * concern — "below the size threshold" vs. "past the count cap" — and the two buckets
+ * never overlap: a folded file is removed before the cap is applied, so it can never
+ * also land in `omittedTail`. Directories are never folded (files only).
+ */
+export interface FoldedSmall {
+  count: number;
+  bytes: number;
+}
+
 /** One directory level, size-sorted and capped — the unit the client fetches and browses. */
 export interface TreeSlice {
   /** The generation this slice was read from; pin it on subsequent reads. */
@@ -54,6 +66,8 @@ export interface TreeSlice {
   childCount: number;
   /** Present when the slice was capped: what was left off the tail. */
   omittedTail?: OmittedTail;
+  /** Present when `minSize` folded sub-threshold files out of this slice. */
+  foldedSmall?: FoldedSmall;
 }
 
 // --- Batch tile query (POST /api/tree/batch) — the map-navigation fetch ---
@@ -69,6 +83,12 @@ export interface TreeBatchRequest {
   path?: string;
   limit?: number;
   depth?: number;
+  /**
+   * Fold direct files smaller than this many bytes into a single `foldedSmall`
+   * aggregate instead of returning them as rows (feature 0013). 0/absent = no fold.
+   * Applies at every level of a `depth > 1` spine.
+   */
+  minSize?: number;
 }
 
 export interface TreeBatchQuery {
@@ -82,6 +102,8 @@ export interface TreeBatchNode {
   children: TreeChild[];
   childCount: number;
   omittedTail?: OmittedTail;
+  /** Present when the request's `minSize` folded sub-threshold files out of this directory. */
+  foldedSmall?: FoldedSmall;
 }
 
 /** The resolved anchor node for a request (so path-anchored fly-tos learn their id). */

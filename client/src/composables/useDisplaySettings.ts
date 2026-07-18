@@ -19,13 +19,19 @@ export interface DisplaySettings {
   shaded: boolean;
   /** Tile base color: by extension type vs. by modification age (feature 0011). */
   colorMode: ColorMode;
+  /**
+   * Fold direct files smaller than this many bytes into one synthetic tile per
+   * directory (feature 0013). 0 = off. Sent to the server as `minSize`, so the tiny
+   * files never cross the wire; changing it re-seeds the map.
+   */
+  minSize: number;
 }
 
 const KEY = "wds.display";
 const VERSION = 1;
 
 function defaults(): DisplaySettings {
-  return { version: VERSION, hoverFullPath: false, sizeUnits: "binary", shaded: false, colorMode: "type" };
+  return { version: VERSION, hoverFullPath: false, sizeUnits: "binary", shaded: false, colorMode: "type", minSize: 0 };
 }
 
 function load(): DisplaySettings {

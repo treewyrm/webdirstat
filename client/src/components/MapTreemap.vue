@@ -4,7 +4,7 @@ import { select } from "d3-selection";
 import { zoom, zoomIdentity, type D3ZoomEvent, type ZoomBehavior, type ZoomTransform } from "d3-zoom";
 import type { TreeChild, TreeSlice } from "@webdirstat/shared";
 import { fetchTreeBatch } from "../api";
-import { fillFor, type AgeBounds } from "../utils/color";
+import { fillFor, SMALL_TILE_COLOR, type AgeBounds } from "../utils/color";
 import { useDisplaySettings } from "../composables/useDisplaySettings";
 import { indexById, layoutInto, makeRoot, type WorldNode } from "../treemap/layout";
 
@@ -49,6 +49,10 @@ let ageMin = Infinity;
 let ageMax = -Infinity;
 
 const pending = new Set<number>();
+// Directories the user explicitly unfolded (feature 0013): fetched with minSize 0
+// so their sub-threshold files show individually, overriding the global fold. Reset
+// on reseed (a new generation invalidates the ids). Empty while folding is off.
+const unfolded = new Set<number>();
 let fetchController: AbortController | null = null;
 let planTimer: ReturnType<typeof setTimeout> | null = null;
 let drawScheduled = false;
@@ -127,21 +131,33 @@ function measure(): void {
   canvas.style.height = `${ch}px`;
 }
 
+// Identifies the tree currently laid out, so reseed can tell a genuinely new tree
+// (new root/generation → reset camera) from a same-tree re-seed (e.g. changing the
+// fold threshold → keep the camera).
+let renderedKey: string | null = null;
+
 function reseed(): void {
   fetchController?.abort();
   pending.clear();
+  unfolded.clear();
+  // Same root+generation means the directory framing is identical (only interiors
+  // re-fold, feature 0013), so retain the camera instead of snapping to identity and
+  // throwing away the user's zoom. A real new root/generation resets the view.
+  const key = `${props.rootId}@${props.seed.generation}`;
+  const keepCamera = worldRoot != null && renderedKey === key;
+  renderedKey = key;
   // New tree: forget the old mtime span before re-accumulating from this seed.
   ageMin = Infinity;
   ageMax = -Infinity;
   emit("agebounds", null);
   if (!wrapperRef.value || cw === 0) measure();
   worldRoot = makeRoot(props.seed.node, { x0: 0, y0: 0, x1: cw || 1, y1: ch || 1 });
-  layoutInto(worldRoot, props.seed.children, props.seed.omittedTail);
+  layoutInto(worldRoot, props.seed.children, props.seed.omittedTail, props.seed.foldedSmall, settings.minSize);
   noteAgeBounds(props.seed.children);
   index = indexById(worldRoot);
-  // Reset the camera to identity.
-  transform = zoomIdentity;
-  if (zoomBehavior && canvasRef.value) select(canvasRef.value).call(zoomBehavior.transform, zoomIdentity);
+  // Re-apply the transform (retained or reset) so d3-zoom's internal state matches.
+  if (!keepCamera) transform = zoomIdentity;
+  if (zoomBehavior && canvasRef.value) select(canvasRef.value).call(zoomBehavior.transform, transform);
   scheduleDraw();
   schedulePlan();
   emitFocus();
@@ -247,8 +263,10 @@ function drawNode(ctx: CanvasRenderingContext2D, node: WorldNode): void {
 }
 
 function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, node: WorldNode): void {
-  if (node.kind === "tail") {
-    ctx.fillStyle = "#23272f";
+  if (node.kind === "tail" || node.kind === "small") {
+    // Both synthetic aggregate tiles get a dashed neutral fill; the "small" fold
+    // (feature 0013) uses a distinct tone so it reads apart from the count-cap tail.
+    ctx.fillStyle = node.kind === "small" ? SMALL_TILE_COLOR : "#23272f";
     ctx.fillRect(x, y, w, h);
     ctx.strokeStyle = "rgba(255,255,255,0.12)";
     ctx.setLineDash([3, 3]);
@@ -408,6 +426,11 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+/** The fold threshold to fetch a directory with: 0 for one the user explicitly unfolded, else the global setting. */
+function minSizeFor(id: number): number {
+  return unfolded.has(id) ? 0 : settings.minSize;
+}
+
 async function planFetches(): Promise<void> {
   if (!worldRoot) return;
   evictIfNeeded();
@@ -428,7 +451,7 @@ async function planFetches(): Promise<void> {
         fetchTreeBatch(
           props.rootId,
           props.seed.generation,
-          ids.map((id) => ({ parentId: id, limit: BATCH_LIMIT })),
+          ids.map((id) => ({ parentId: id, limit: BATCH_LIMIT, minSize: minSizeFor(id) })),
           controller.signal,
         ),
       ),
@@ -450,15 +473,21 @@ async function planFetches(): Promise<void> {
 }
 
 /** Applies a batch response, laying out newly-fetched directories level by level. */
-function applyBatch(nodes: Record<string, { children: TreeChild[]; childCount: number; omittedTail?: { count: number; bytes: number } }>): void {
+function applyBatch(
+  nodes: Record<
+    string,
+    { children: TreeChild[]; childCount: number; omittedTail?: { count: number; bytes: number }; foldedSmall?: { count: number; bytes: number } }
+  >,
+): void {
   let changed = true;
   let passes = 0;
   while (changed && passes++ < SPINE_DEPTH + 2) {
     changed = false;
     for (const [idStr, entry] of Object.entries(nodes)) {
-      const node = index.get(Number(idStr));
+      const id = Number(idStr);
+      const node = index.get(id);
       if (node && node.children === null) {
-        layoutInto(node, entry.children, entry.omittedTail);
+        layoutInto(node, entry.children, entry.omittedTail, entry.foldedSmall, minSizeFor(id));
         noteAgeBounds(entry.children);
         changed = true;
       }
@@ -513,7 +542,30 @@ function onMouseMove(event: MouseEvent): void {
 
 function onClick(event: MouseEvent): void {
   const node = nodeAtEvent(event);
-  if (node && node.kind === "directory" && node.childCount > 0) flyTo(node);
+  if (!node) return;
+  if (node.kind === "small") {
+    unfold(node);
+    return;
+  }
+  if (node.kind === "directory" && node.childCount > 0) flyTo(node);
+}
+
+/**
+ * Reveal the files a "small" tile folded (feature 0013, Model A). The fold is
+ * server-side and camera-independent, so unfolding means re-fetching the containing
+ * directory with `minSize: 0`; marking it `unfolded` keeps the settle planner from
+ * re-folding it on the next camera frame. Drop the stale interior and let the planner
+ * refetch it.
+ */
+function unfold(smallTile: WorldNode): void {
+  const parentId = smallTile.foldedParentId;
+  if (parentId == null) return;
+  const parent = index.get(parentId);
+  if (!parent) return;
+  unfolded.add(parentId);
+  parent.children = null;
+  index = indexById(worldRoot!);
+  void planFetches();
 }
 
 // --- fly-to (camera animation) ---
@@ -557,7 +609,7 @@ async function prefetchSpine(node: WorldNode): Promise<void> {
   if (node.children !== null && node.children.every((c) => c.children !== null || c.kind !== "directory")) return;
   try {
     const response = await fetchTreeBatch(props.rootId, props.seed.generation, [
-      { parentId: node.id, depth: SPINE_DEPTH, limit: BATCH_LIMIT },
+      { parentId: node.id, depth: SPINE_DEPTH, limit: BATCH_LIMIT, minSize: minSizeFor(node.id) },
     ]);
     applyBatch(response.nodes);
     scheduleDraw();
@@ -572,7 +624,7 @@ function flyToPath(path: string): void {
   let node: WorldNode = worldRoot;
   if (path) {
     for (const segment of path.split("/").filter(Boolean)) {
-      const child = node.children?.find((c) => c.kind !== "tail" && c.name === segment);
+      const child = node.children?.find((c) => c.kind !== "tail" && c.kind !== "small" && c.name === segment);
       if (!child) break;
       node = child;
     }
@@ -605,11 +657,13 @@ function emitFocus(): void {
   }
   const focusNode = chain[chain.length - 1]!;
   const children: TreeChild[] = (focusNode.children ?? [])
-    .filter((c) => c.kind !== "tail")
+    // Synthetic aggregate tiles ("tail", "small") aren't real children — keep them
+    // out of the file-list pane.
+    .filter((c) => c.kind !== "tail" && c.kind !== "small")
     .map((c) => ({
       id: c.id,
       name: c.name,
-      kind: c.kind === "tail" ? "other" : c.kind,
+      kind: c.kind === "tail" || c.kind === "small" ? "other" : c.kind,
       size: c.size,
       childCount: c.childCount,
       ...(c.ext != null ? { ext: c.ext } : {}),

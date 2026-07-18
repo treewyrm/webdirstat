@@ -33,6 +33,17 @@ const { settings, reset } = useDisplaySettings();
       </select>
     </label>
 
+    <label class="row">
+      <span>Fold small files</span>
+      <select v-model.number="settings.minSize">
+        <option :value="0">Off — show every file</option>
+        <option :value="4 * 1024">Under 4 KiB</option>
+        <option :value="64 * 1024">Under 64 KiB</option>
+        <option :value="1024 * 1024">Under 1 MiB</option>
+        <option :value="10 * 1024 * 1024">Under 10 MiB</option>
+      </select>
+    </label>
+
     <div class="actions">
       <button type="button" class="reset" @click="reset">Restore defaults</button>
     </div>

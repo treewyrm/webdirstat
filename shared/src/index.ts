@@ -3,6 +3,7 @@ export type {
   ScanRoot,
   TreeChild,
   OmittedTail,
+  FoldedSmall,
   TreeSlice,
   TreeBatchRequest,
   TreeBatchQuery,
