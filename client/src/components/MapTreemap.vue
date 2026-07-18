@@ -203,7 +203,7 @@ function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, w: number
 function drawTileBorder(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
   const lx = crisp(x);
   const ty = crisp(y);
-  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.strokeStyle = "rgba(0,0,0,0.5)";
   ctx.lineWidth = 1 / dpr;
   ctx.beginPath();
   ctx.moveTo(lx, y);
@@ -247,7 +247,7 @@ function cushionSprite(): HTMLCanvasElement {
 }
 
 function drawDirFrame(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, node: WorldNode): void {
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.strokeStyle = "rgba(0,0,0,0.5)";
   ctx.lineWidth = 1;
   ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
   // A slim header strip with the folder name so nesting stays legible.
