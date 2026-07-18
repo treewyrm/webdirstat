@@ -1,4 +1,13 @@
-import type { ScanEvent, ScanRoot } from "@webdirstat/shared";
+import type {
+  RootSchedule,
+  RootStatus,
+  ScannerStatus,
+  ScanMode,
+  ScanRoot,
+  TreeBatchRequest,
+  TreeBatchResponse,
+  TreeSlice,
+} from "@webdirstat/shared";
 
 export async function fetchRoots(): Promise<ScanRoot[]> {
   const res = await fetch("/api/roots");
@@ -6,32 +15,104 @@ export async function fetchRoots(): Promise<ScanRoot[]> {
   return res.json() as Promise<ScanRoot[]>;
 }
 
-export interface ScanHandlers {
-  onEvent: (event: ScanEvent) => void;
-  onError?: () => void;
+export class NotScannedError extends Error {
+  constructor() {
+    super("This root has not been scanned yet.");
+    this.name = "NotScannedError";
+  }
 }
 
-/** Starts an SSE scan and returns a function that cancels it. */
-export function startScan(rootId: string, path: string, handlers: ScanHandlers): () => void {
+export interface FetchTreeOptions {
+  limit?: number;
+  generation?: number;
+}
+
+/** Fetches one directory level (size-sorted, capped) from the store. */
+export async function fetchTree(rootId: string, path: string, options: FetchTreeOptions = {}): Promise<TreeSlice> {
   const params = new URLSearchParams({ root: rootId });
   if (path) params.set("path", path);
-  const source = new EventSource(`/api/scan?${params.toString()}`);
+  if (options.limit != null) params.set("limit", String(options.limit));
+  if (options.generation != null) params.set("generation", String(options.generation));
 
+  const res = await fetch(`/api/tree?${params.toString()}`);
+  if (res.status === 404) throw new NotScannedError();
+  if (!res.ok) throw new Error(`Failed to load tree: ${res.status}`);
+  return res.json() as Promise<TreeSlice>;
+}
+
+/**
+ * The tile query for map navigation: many directories' children (and optional
+ * subtree spines) in one round trip, generation-pinned. Pass an `AbortSignal` to
+ * cancel a batch made stale by fast zoom-through.
+ */
+export async function fetchTreeBatch(
+  rootId: string,
+  generation: number,
+  requests: TreeBatchRequest[],
+  signal?: AbortSignal,
+): Promise<TreeBatchResponse> {
+  const res = await fetch("/api/tree/batch", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ root: rootId, generation, requests }),
+    signal,
+  });
+  if (res.status === 410) throw new Error("410 Gone: generation swapped out");
+  if (!res.ok) throw new Error(`Batch failed: ${res.status}`);
+  return res.json() as Promise<TreeBatchResponse>;
+}
+
+/** Subscribes to the global scanner state over SSE. Returns an unsubscribe function. */
+export function subscribeStatus(onStatus: (status: ScannerStatus) => void): () => void {
+  const source = new EventSource("/api/status");
   source.onmessage = (message: MessageEvent<string>) => {
     try {
-      const payload = JSON.parse(message.data) as ScanEvent;
-      handlers.onEvent(payload);
-      if (payload.type === "done" || payload.type === "error") source.close();
+      onStatus(JSON.parse(message.data) as ScannerStatus);
     } catch (error) {
-      console.error("Failed to parse scan event", error);
+      console.error("Failed to parse status event", error);
     }
   };
-
-  source.onerror = () => {
-    // Prevent the browser's default auto-reconnect from silently starting a duplicate scan.
-    source.close();
-    handlers.onError?.();
-  };
-
+  // The browser auto-reconnects EventSource on transient errors, which is what we want here.
   return () => source.close();
+}
+
+/** Starts a manual scan (force; bypasses schedule gates). */
+export async function startScan(rootId: string, mode: ScanMode = "queue"): Promise<void> {
+  const res = await fetch("/api/scan", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ root: rootId, mode }),
+  });
+  if (!res.ok) throw new Error(`Failed to start scan: ${res.status}`);
+}
+
+/** Stops the running scan (abort + drop staging; leaves the scheduler alone). */
+export async function stopScan(): Promise<void> {
+  const res = await fetch("/api/scan/stop", { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to stop scan: ${res.status}`);
+}
+
+export async function fetchRootStatus(rootId: string): Promise<RootStatus> {
+  const res = await fetch(`/api/roots/${encodeURIComponent(rootId)}/status`);
+  if (!res.ok) throw new Error(`Failed to load status: ${res.status}`);
+  return res.json() as Promise<RootStatus>;
+}
+
+export async function fetchSchedule(rootId: string): Promise<RootSchedule> {
+  const res = await fetch(`/api/roots/${encodeURIComponent(rootId)}/schedule`);
+  if (!res.ok) throw new Error(`Failed to load schedule: ${res.status}`);
+  return res.json() as Promise<RootSchedule>;
+}
+
+export async function putSchedule(rootId: string, schedule: RootSchedule): Promise<RootSchedule> {
+  const res = await fetch(`/api/roots/${encodeURIComponent(rootId)}/schedule`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(schedule),
+  });
+  if (!res.ok) {
+    const message = await res.text().catch(() => "");
+    throw new Error(`Failed to save schedule: ${res.status} ${message}`);
+  }
+  return res.json() as Promise<RootSchedule>;
 }

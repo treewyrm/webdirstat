@@ -1,1 +1,22 @@
-export type { NodeKind, ScanNode, ScanRoot, ScanQuery, ScanEvent } from "./types.ts";
+export type {
+  NodeKind,
+  ScanRoot,
+  TreeChild,
+  OmittedTail,
+  TreeSlice,
+  TreeBatchRequest,
+  TreeBatchQuery,
+  TreeBatchNode,
+  TreeBatchResolved,
+  TreeBatchResponse,
+  ScanSummary,
+  ScanEvent,
+  ScanTrigger,
+  ScanProgress,
+  ScannerState,
+  ScannerStatus,
+  ScanMode,
+  ScheduleWindow,
+  RootSchedule,
+  RootStatus,
+} from "./types.ts";

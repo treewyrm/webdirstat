@@ -1,49 +1,33 @@
-import { createEventStream, getQuery, HTTPError } from "h3";
+import { getQuery, HTTPError, readBody } from "h3";
 import type { H3, H3Event } from "h3";
-import type { ScanEvent } from "@webdirstat/shared";
-import type { Config } from "../config.ts";
-import { findRoot, resolveScanPath } from "../scan/resolve-path.ts";
-import { scanTree } from "../scan/walk.ts";
+import type { ScannerStatus } from "@webdirstat/shared";
+import type { Scanner, ScanMode } from "../scan/scanner.ts";
 
-export function registerScanRoute(app: H3, config: Config): void {
-  app.get("/api/scan", async (event: H3Event) => {
+interface ScanRequest {
+  root?: string;
+  mode?: string;
+}
+
+/** Manual scan control: start (queue/preempt) and stop. Bypasses the schedule gates. */
+export function registerScanRoutes(app: H3, scanner: Scanner): void {
+  app.post("/api/scan", async (event: H3Event): Promise<{ outcome: string; status: ScannerStatus }> => {
+    const body = ((await readBody(event).catch(() => undefined)) ?? {}) as ScanRequest;
     const query = getQuery(event);
-    const rootId = typeof query.root === "string" ? query.root : "";
-    const relativePath = typeof query.path === "string" ? query.path : undefined;
+    const rootId = body.root ?? (typeof query.root === "string" ? query.root : "");
+    if (!rootId) throw HTTPError.status(400, "Bad Request", { message: 'Missing "root"' });
 
-    if (!rootId) {
-      throw HTTPError.status(400, "Bad Request", { message: 'Missing "root" query parameter' });
-    }
+    const mode: ScanMode = (body.mode ?? query.mode) === "preempt" ? "preempt" : "queue";
+    const trigger = mode === "preempt" ? "preempt" : "manual";
 
-    const root = findRoot(config.roots, rootId);
-    const absolutePath = await resolveScanPath(root, relativePath);
-
-    const stream = createEventStream(event);
-    const controller = new AbortController();
-    stream.onClosed(() => controller.abort());
-
-    const send = (payload: ScanEvent) => stream.push(JSON.stringify(payload));
-
-    void (async () => {
-      const startedAt = Date.now();
-      try {
-        const { tree, entries, bytes } = await scanTree(absolutePath, {
-          signal: controller.signal,
-          onProgress: (scanned, scannedBytes, path) => {
-            const relative = path.slice(root.absolutePath.length) || "/";
-            void send({ type: "progress", entries: scanned, bytes: scannedBytes, path: relative });
-          },
-        });
-        await send({ type: "done", tree, entries, bytes, durationMs: Date.now() - startedAt });
-      } catch (error) {
-        if ((error as Error).name !== "AbortError") {
-          await send({ type: "error", message: (error as Error).message });
-        }
-      } finally {
-        await stream.close();
-      }
-    })();
-
-    return stream.send();
+    const outcome = scanner.start(rootId, trigger, mode);
+    if (outcome === "unknown-root") throw HTTPError.status(404, "Not Found", { message: `Unknown root "${rootId}"` });
+    return { outcome, status: scanner.status() };
   });
+
+  const stop = (): { status: ScannerStatus } => {
+    scanner.stop();
+    return { status: scanner.status() };
+  };
+  app.post("/api/scan/stop", () => stop());
+  app.delete("/api/scan", () => stop());
 }

@@ -1,4 +1,11 @@
-import type { ScanNode } from "@webdirstat/shared";
+import type { NodeKind } from "@webdirstat/shared";
+
+/** The minimal shape needed to pick a color (satisfied by the map's WorldNode). */
+export interface Colorable {
+  kind: NodeKind | "tail";
+  name: string;
+  error?: string;
+}
 
 const PALETTE = [
   "#4C78A8",
@@ -27,7 +34,7 @@ function extensionOf(name: string): string {
 }
 
 /** Deterministic tile color: directories/symlinks/other get fixed neutral tones, files are colored by extension. */
-export function colorFor(node: ScanNode): string {
+export function colorFor(node: Colorable): string {
   if (node.error) return "#5b1f22";
   if (node.kind === "directory") return "#3a3f4b";
   if (node.kind === "symlink") return "#6b6f7a";

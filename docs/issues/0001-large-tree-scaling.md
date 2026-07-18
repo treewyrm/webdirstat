@@ -1,6 +1,10 @@
 # 0001 — Scaling to very large trees (~2M files)
 
-Status: **Proposed**
+Status: **Decided** — resolved via the background-service rework in
+[0002](0002-background-scanning-service.md), not the standalone minimal fix.
+
+Related: [0002 — Background scanning service](0002-background-scanning-service.md),
+[feature 0002 — Pan/zoom treemap](../features/0002-pan-zoom-treemap.md).
 
 ## Context
 
@@ -79,4 +83,15 @@ only if in practice people want to drill past the cap.
 
 ## Decision
 
-Not yet decided — pending discussion.
+**Decided (2026-07-17): fix this at the root via the background-service rework,
+not the standalone minimal option.** We're committing to
+[issue 0002](0002-background-scanning-service.md) — a persistent store that serves
+the tree in slices — which addresses all three bottlenecks above (server→client
+transfer, client memory, render count) *and*, unlike Option A, unlocks
+[feature 0002 (pan/zoom treemap)](../features/0002-pan-zoom-treemap.md).
+
+Option **A** (capped rollup) is **not** pursued as a standalone change. The
+capping instinct still holds, but it moves into 0002's API as a per-slice `limit`
+(size-sorted top-N per directory, paged/expandable) rather than a lossy fold
+baked irreversibly into the walk. The options above are kept for history; see
+0002 for the chosen design.

@@ -6,7 +6,17 @@ services:
     environment:
       # Label=host-path pairs, comma separated. Each is mounted read-only below.
       ROOTS: "Media=/data/media,Backups=/data/backups"
+      # Optional background schedule (omit for manual-only Start/Stop):
+      #   refresh when older than 6h, but only overnight; keep no history.
+      SCAN_INTERVAL: "6h"
+      SCAN_WINDOWS: "Mon-Fri 01:00-05:00; Sat,Sun 00:00-08:00"
+      HISTORY_GENERATIONS: "0"
     volumes:
       - /volume1/media:/data/media:ro
       - /volume1/backups:/data/backups:ro
+      # The SQLite store needs writable storage (DB_PATH defaults to /db/webdirstat.db).
+      - webdirstat-db:/db
     restart: unless-stopped
+
+volumes:
+  webdirstat-db:
