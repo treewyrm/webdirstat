@@ -103,7 +103,9 @@ export async function loadConfig(): Promise<Config> {
     port: Number(process.env.PORT) || 3000,
     host: process.env.HOST || "0.0.0.0",
     roots: await parseRoots(process.env.ROOTS),
-    clientDist: process.env.CLIENT_DIST,
+    // Absolute so the static handler's containment guard (which compares against a
+    // resolved, absolute request path) works even when CLIENT_DIST is given relative.
+    clientDist: process.env.CLIENT_DIST ? resolve(process.env.CLIENT_DIST) : undefined,
     dbPath: process.env.DB_PATH || "./data/webdirstat.db",
     scheduleDefaults: {
       enabled,
