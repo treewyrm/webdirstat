@@ -20,9 +20,11 @@ const LABEL_MIN_W = 44;
 const LABEL_MIN_H = 15;
 const PLAN_DEBOUNCE = 120;
 const FLY_MS = 450;
+const FLY_COVER = 1.03; // descend fills the viewport with the target (folder ⊇ viewport) so it becomes the current folder
 const SPINE_DEPTH = 3;
 const BATCH_LIMIT = 200;
 const LOAD_CAP = 600;
+const MAX_BATCH_REQUESTS = 64; // server rejects a batch with more requests than this (POST /api/tree/batch)
 
 const wrapperRef = ref<HTMLDivElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -268,6 +270,12 @@ function collectNeeded(node: WorldNode, out: number[]): void {
   }
 }
 
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 async function planFetches(): Promise<void> {
   if (!worldRoot) return;
   evictIfNeeded();
@@ -281,13 +289,19 @@ async function planFetches(): Promise<void> {
   for (const id of needed) pending.add(id);
 
   try {
-    const response = await fetchTreeBatch(
-      props.rootId,
-      props.seed.generation,
-      needed.map((id) => ({ parentId: id, limit: BATCH_LIMIT })),
-      controller.signal,
+    // The server caps a batch at MAX_BATCH_REQUESTS directories, so a dense frame is
+    // split across parallel requests (all under the one abort controller).
+    const responses = await Promise.all(
+      chunk(needed, MAX_BATCH_REQUESTS).map((ids) =>
+        fetchTreeBatch(
+          props.rootId,
+          props.seed.generation,
+          ids.map((id) => ({ parentId: id, limit: BATCH_LIMIT })),
+          controller.signal,
+        ),
+      ),
     );
-    applyBatch(response.nodes);
+    for (const response of responses) applyBatch(response.nodes);
   } catch (error) {
     if (controller.signal.aborted) return; // superseded by a newer camera frame
     if (error instanceof Error && /410|Gone/.test(error.message)) {
@@ -374,7 +388,10 @@ function onClick(event: MouseEvent): void {
 function targetTransformFor(node: WorldNode): ZoomTransform {
   const nodeW = node.x1 - node.x0;
   const nodeH = node.y1 - node.y0;
-  const k = Math.max(0.05, Math.min(5_000_000, 0.9 * Math.min(cw / nodeW, ch / nodeH)));
+  // Cover-fit (max ratio), not fit-inside (min): the target must fully *contain* the
+  // viewport to become the current folder in emitFocus. A hair of overscan (FLY_COVER)
+  // keeps float rounding from leaving the viewport a pixel outside the folder rect.
+  const k = Math.max(0.05, Math.min(5_000_000, FLY_COVER * Math.max(cw / nodeW, ch / nodeH)));
   const cx = (node.x0 + node.x1) / 2;
   const cy = (node.y0 + node.y1) / 2;
   return zoomIdentity.translate(cw / 2 - k * cx, ch / 2 - k * cy).scale(k);
