@@ -7,7 +7,11 @@ const formatBytes = useByteFormat();
 
 /** Size-sorted children of the focused directory; clicking a row selects it. */
 const props = defineProps<{ children: TreeChild[]; totalSize: number }>();
-const emit = defineEmits<{ select: [child: TreeChild] }>();
+const emit = defineEmits<{
+  select: [child: TreeChild];
+  /** The hovered row's node id (feature 0012, list → map highlight), or null on leave. */
+  hover: [id: number | null];
+}>();
 
 /** Leading list-row glyph for a child's kind (directory / symlink / everything else). */
 function iconForKind(kind: TreeChild["kind"]) {
@@ -29,6 +33,8 @@ function percentOfTotal(node: TreeChild): number {
       class="list-row"
       :class="{ error: !!child.error, dir: child.kind === 'directory' }"
       @click="emit('select', child)"
+      @mouseenter="emit('hover', child.id)"
+      @mouseleave="emit('hover', null)"
     >
       <div class="bar" :style="{ width: percentOfTotal(child) + '%' }"></div>
       <component :is="iconForKind(child.kind)" class="icon" :size="14" aria-hidden="true" />

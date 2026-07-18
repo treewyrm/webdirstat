@@ -1,6 +1,6 @@
 # 0012 — Highlight the map tile when hovering a list row
 
-Status: **Proposed**
+Status: **Done**
 
 Hovering a row in the left **file-list pane** should highlight the corresponding
 tile in the **map view**, when that tile is currently on screen. Closes the loop on
@@ -80,4 +80,20 @@ block on it.
 
 ## Decision
 
-Not yet decided — pending discussion.
+Shipped, list → map only. Client-only, no protocol/server change.
+
+- **App.vue** holds a `highlightedId` ref, fed by a `@hover` event from `FileList`
+  (row `@mouseenter` → id, `@mouseleave` → null) and passed to `MapTreemap` as the
+  `highlightId` prop.
+- **FileList.vue** emits `hover: [id: number | null]` per row.
+- **MapTreemap.vue** takes `highlightId`, watches it into the existing `scheduleDraw`
+  RAF (no synchronous redraw per pointer move), and after the normal `drawNode` pass
+  paints a `drawHighlight` overlay: look up the id in the laid-out `index`, and if the
+  node's world rect intersects the viewport, stroke its outline. A miss (collapsed or
+  off screen) draws nothing — the "if it is visible" behavior above.
+- **Highlight style.** Distinct from the map's own hover (which only drives the
+  tooltip, never a canvas outline): a dark backing stroke under a bright white accent,
+  so it stays legible over any tile fill. The off-screen directional indicator and the
+  bidirectional map → list half remain out of scope.
+- **Row cap aside** split out to its own feature,
+  [0015](0015-cap-file-list-rows.md) — not part of this change.

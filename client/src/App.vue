@@ -42,6 +42,8 @@ const focusChain = shallowRef<Array<{ id: number; name: string; path: string }>>
 const focusChildren = shallowRef<TreeChild[]>([]);
 const focusSize = ref(0);
 const hoveredNode = shallowRef<WorldNode | null>(null);
+/** Node id of the hovered file-list row, mirrored onto the map as a tile highlight. */
+const highlightedId = ref<number | null>(null);
 
 /** [oldest, newest] mtime the map has seen, for the age-mode gradient legend. */
 const ageBounds = shallowRef<AgeBounds | null>(null);
@@ -175,13 +177,19 @@ function flyToChild(child: TreeChild): void {
 
     <main v-if="seed" class="content">
       <TypeList v-if="showTypes" :root-id="selectedRootId" :generation="generation" :path="focusPath" />
-      <FileList :children="focusChildren" :total-size="focusSize" @select="flyToChild" />
+      <FileList
+        :children="focusChildren"
+        :total-size="focusSize"
+        @select="flyToChild"
+        @hover="(id) => (highlightedId = id)"
+      />
 
       <section class="treemap-pane">
         <MapTreemap
           ref="mapRef"
           :root-id="selectedRootId"
           :seed="seed"
+          :highlight-id="highlightedId"
           @focus="onFocus"
           @hover="(node) => (hoveredNode = node)"
           @stale="loadRoot"

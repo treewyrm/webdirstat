@@ -10,7 +10,7 @@ import { indexById, layoutInto, makeRoot, type WorldNode } from "../treemap/layo
 
 const { settings } = useDisplaySettings();
 
-const props = defineProps<{ rootId: string; seed: TreeSlice }>();
+const props = defineProps<{ rootId: string; seed: TreeSlice; highlightId?: number | null }>();
 const emit = defineEmits<{
   focus: [{ chain: Array<{ id: number; name: string; path: string }>; children: TreeChild[]; size: number }];
   hover: [WorldNode | null];
@@ -83,6 +83,9 @@ watch(() => props.seed, reseed);
 
 // Flat/Shaded is a pure rendering-layer change — just repaint, no refetch/relayout.
 watch(() => settings.shaded, scheduleDraw);
+
+// List-row hover (feature 0012) is a pure overlay repaint — coalesce into the RAF.
+watch(() => props.highlightId, scheduleDraw);
 
 // Type/Age color mode is also a pure repaint; re-emit bounds so the legend is ready.
 watch(
@@ -181,8 +184,38 @@ function draw(): void {
 
   drawNode(ctx, worldRoot);
 
+  if (props.highlightId != null) drawHighlight(ctx, props.highlightId);
+
   // Keep animating while any shimmer placeholder is on screen (the gradient pan).
   if (drewShimmer) scheduleDraw();
+}
+
+/**
+ * List → map highlight (feature 0012). Outlines the tile whose id the pointer is on
+ * in the file-list pane, when it's laid out and on screen; a miss (collapsed or
+ * panned off) simply draws nothing. A dark backing stroke under a bright accent keeps
+ * it legible over any tile fill.
+ */
+function drawHighlight(ctx: CanvasRenderingContext2D, id: number): void {
+  const node = index.get(id);
+  if (!node) return;
+  const { k, x, y } = transform;
+  const sx0 = k * node.x0 + x;
+  const sy0 = k * node.y0 + y;
+  const sx1 = k * node.x1 + x;
+  const sy1 = k * node.y1 + y;
+  if (sx1 < 0 || sy1 < 0 || sx0 > cw || sy0 > ch) return; // off screen
+  const w = sx1 - sx0;
+  const h = sy1 - sy0;
+  if (w < 1 || h < 1) return;
+  ctx.save();
+  ctx.strokeStyle = "rgba(0,0,0,0.6)";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(sx0 + 1.5, sy0 + 1.5, w - 3, h - 3);
+  ctx.strokeStyle = "rgba(255,255,255,0.95)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(sx0 + 1.5, sy0 + 1.5, w - 3, h - 3);
+  ctx.restore();
 }
 
 function drawNode(ctx: CanvasRenderingContext2D, node: WorldNode): void {
