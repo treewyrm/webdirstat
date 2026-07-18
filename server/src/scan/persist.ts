@@ -60,13 +60,14 @@ export async function persistScan(
     },
     leaf(parentId, name, kind, size, mtimeMs, error) {
       const ext = kind === "file" ? splitExt(name) : null;
-      writer.insertLeaf(parentId, name, kind, size, mtimeMs, ext, error);
+      const id = writer.insertLeaf(parentId, name, kind, size, mtimeMs, ext, error);
       if (kind === "file") {
         const key = ext ?? "";
         const acc = rollup.get(key) ?? { bytes: 0, count: 0 };
         acc.bytes += size;
         acc.count += 1;
         rollup.set(key, acc);
+        writer.indexFileName(id, name);
       }
       maybeCommit();
     },

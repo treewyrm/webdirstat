@@ -26,6 +26,7 @@ export interface NodeRow {
 export class NodeWriter {
   private readonly insertStmt: StatementSync;
   private readonly updateDirStmt: StatementSync;
+  private readonly indexNameStmt: StatementSync;
 
   constructor(
     private readonly store: Store,
@@ -37,6 +38,9 @@ export class NodeWriter {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     this.updateDirStmt = store.db.prepare("UPDATE node SET size = ?, child_count = ?, error = ? WHERE id = ?");
+    this.indexNameStmt = store.db.prepare(
+      "INSERT INTO node_fts (name, node_id, generation, root_id) VALUES (?, ?, ?, ?)",
+    );
   }
 
   private insert(
@@ -85,6 +89,16 @@ export class NodeWriter {
   /** Fills in a directory's precomputed aggregate size, direct-child count, and read error. */
   updateDir(id: number, size: number, childCount: number, error: string | null): void {
     this.updateDirStmt.run(size, childCount, error, id);
+  }
+
+  /**
+   * Adds a file's name to the substring search index (feature 0004). Called from the
+   * walk's leaf sink for files only — search targets `kind='file'`, so directories and
+   * symlinks stay out of the index. Rides the walk's transaction batching like every
+   * other write; the staged generation's fts rows are dropped with it on abort/prune.
+   */
+  indexFileName(nodeId: number, name: string): void {
+    this.indexNameStmt.run(name, nodeId, this.generation, this.rootId);
   }
 }
 

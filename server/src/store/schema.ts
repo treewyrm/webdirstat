@@ -6,7 +6,7 @@
  */
 
 /** Bumped when a new migration is appended. Must equal MIGRATIONS.length. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * Ordered DDL migrations. Index i upgrades the DB from `user_version === i` to
@@ -95,5 +95,27 @@ export const MIGRATIONS: string[] = [
     value TEXT NOT NULL
   );
   INSERT INTO meta (key, value) VALUES ('next_generation', '1');
+  `,
+
+  // 1 → 2: search & filter (feature 0004). Additive — no existing data touched.
+  `
+  -- Whole-root "files larger than N, biggest first" has no index today: node_parent_size
+  -- is keyed on parent_id (not root), and node_gen_root_{mtime,ext} aren't size-sorted, so
+  -- a pure-size search scans the whole generation. This makes it a range scan. kind is in
+  -- the key so the common files-only predicate is satisfied from the index.
+  CREATE INDEX node_gen_root_size ON node (generation, root_id, kind, size DESC);
+
+  -- Filename substring search. Standalone (not external-content) fts5 so generation prune
+  -- is a plain DELETE and never has to stay in lockstep with the node table. The trigram
+  -- tokenizer gives true substring MATCH ('backup' matches 'mybackup.tar'), which the
+  -- default prefix/token tokenizer cannot. Populated in the walk's leaf sink for files only
+  -- (search targets kind='file'); the UNINDEXED columns scope a MATCH to one (root, gen).
+  CREATE VIRTUAL TABLE node_fts USING fts5(
+    name,
+    node_id     UNINDEXED,
+    generation  UNINDEXED,
+    root_id     UNINDEXED,
+    tokenize = 'trigram'
+  );
   `,
 ];

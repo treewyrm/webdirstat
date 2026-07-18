@@ -29,6 +29,7 @@ export function allocateGeneration(store: Store, rootId: string): number {
 export function dropGeneration(store: Store, rootId: string, generation: number): void {
   store.transaction(() => {
     store.db.prepare("DELETE FROM node WHERE generation = ? AND root_id = ?").run(generation, rootId);
+    store.db.prepare("DELETE FROM node_fts WHERE generation = ? AND root_id = ?").run(generation, rootId);
     store.db.prepare("DELETE FROM type_rollup WHERE generation = ? AND root_id = ?").run(generation, rootId);
     store.db.prepare("DELETE FROM root_generation WHERE root_id = ? AND generation = ?").run(rootId, generation);
   });
@@ -91,6 +92,7 @@ export function prune(store: Store, rootId: string, keep: number): void {
   store.transaction(() => {
     for (const { generation } of doomed) {
       store.db.prepare("DELETE FROM node WHERE generation = ? AND root_id = ?").run(generation, rootId);
+      store.db.prepare("DELETE FROM node_fts WHERE generation = ? AND root_id = ?").run(generation, rootId);
       store.db.prepare("DELETE FROM type_rollup WHERE generation = ? AND root_id = ?").run(generation, rootId);
       store.db.prepare("DELETE FROM root_generation WHERE root_id = ? AND generation = ?").run(rootId, generation);
     }
