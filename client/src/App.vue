@@ -11,17 +11,12 @@ import {
   subscribeStatus,
 } from "./api";
 import type { WorldNode } from "./treemap/layout";
-import { formatAgo, formatBytes, formatCount, formatUntil } from "./utils/format";
+import { formatBytes } from "./utils/format";
 import MapTreemap from "./components/MapTreemap.vue";
-import { File, Folder, Link2 } from "@lucide/vue";
-
-/** Leading list-row glyph for a child's kind (directory / symlink / everything else). */
-function iconForKind(kind: TreeChild["kind"]) {
-  if (kind === "directory") return Folder;
-  if (kind === "symlink") return Link2;
-  return File;
-}
 import ScheduleEditor from "./components/ScheduleEditor.vue";
+import Breadcrumbs from "./components/Breadcrumbs.vue";
+import ScanStatus from "./components/ScanStatus.vue";
+import FileList from "./components/FileList.vue";
 
 const roots = ref<ScanRoot[]>([]);
 const selectedRootId = ref<string>("");
@@ -48,18 +43,6 @@ let unsubscribe: (() => void) | null = null;
 let statusTimer: ReturnType<typeof setInterval> | null = null;
 
 const globalScanning = computed(() => scanner.value.state.phase !== "idle");
-const rootLabel = (id: string) => roots.value.find((r) => r.id === id)?.label ?? id;
-
-const scanLine = computed<string | null>(() => {
-  const s = scanner.value.state;
-  if (s.phase === "idle") return null;
-  const who = `${rootLabel(s.root)} (${s.trigger})`;
-  if (s.phase === "swapping") return `Swapping in ${who}…`;
-  if (s.progress) {
-    return `Scanning ${who}: ${formatCount(s.progress.entries)} entries · ${formatBytes(s.progress.bytes)} · ${s.progress.path}`;
-  }
-  return `Scanning ${who}…`;
-});
 
 const focusPath = computed(() => focusChain.value.at(-1)?.path ?? "");
 
@@ -147,10 +130,6 @@ function flyToChild(child: TreeChild): void {
   const path = focusPath.value ? `${focusPath.value}/${child.name}` : child.name;
   mapRef.value?.flyToPath(path);
 }
-
-function percentOfFocus(node: TreeChild): number {
-  return focusSize.value > 0 ? (node.size / focusSize.value) * 100 : 0;
-}
 </script>
 
 <template>
@@ -163,49 +142,15 @@ function percentOfFocus(node: TreeChild): number {
       <button :disabled="!selectedRootId" @click="onStartStop">{{ globalScanning ? "Stop" : "Scan" }}</button>
       <button class="ghost" :class="{ active: showSchedule }" @click="showSchedule = !showSchedule">Schedule</button>
 
-      <div v-if="scanLine" class="status">{{ scanLine }}</div>
-      <div v-else-if="rootStatus" class="status">
-        <template v-if="rootStatus.generation != null">
-          {{ formatCount(rootStatus.totalCount ?? 0) }} entries ·
-          {{ formatBytes(rootStatus.totalBytes ?? 0) }} ·
-          scanned {{ formatAgo(rootStatus.lastScanEndedAt) }}
-          <span v-if="rootStatus.lastScanStatus && rootStatus.lastScanStatus !== 'ok'" class="badge">
-            ({{ rootStatus.lastScanStatus }})
-          </span>
-          <span v-if="rootStatus.enabled && rootStatus.nextScanAt" class="muted">
-            · next {{ formatUntil(rootStatus.nextScanAt) }}
-          </span>
-          <span v-else-if="!rootStatus.enabled" class="muted">· manual only</span>
-        </template>
-        <template v-else>not scanned yet</template>
-      </div>
-      <div v-if="scanError" class="status error">{{ scanError }}</div>
+      <ScanStatus :scanner="scanner" :roots="roots" :root-status="rootStatus" :error="scanError" />
     </header>
 
     <ScheduleEditor v-if="showSchedule && selectedRootId" :root-id="selectedRootId" @saved="refreshRootStatus" />
 
-    <nav v-if="focusChain.length > 0" class="breadcrumbs">
-      <button v-for="(node, index) in focusChain" :key="index" @click="mapRef?.flyToPath(node.path)">
-        {{ index === 0 ? node.name || "/" : node.name }}
-      </button>
-    </nav>
+    <Breadcrumbs :chain="focusChain" @navigate="(path) => mapRef?.flyToPath(path)" />
 
     <main v-if="seed" class="content">
-      <aside class="list-pane">
-        <div
-          v-for="child in focusChildren"
-          :key="child.id"
-          class="list-row"
-          :class="{ error: !!child.error, dir: child.kind === 'directory' }"
-          @click="flyToChild(child)"
-        >
-          <div class="bar" :style="{ width: percentOfFocus(child) + '%' }"></div>
-          <component :is="iconForKind(child.kind)" class="icon" :size="14" aria-hidden="true" />
-          <span class="name" :title="child.name">{{ child.name }}</span>
-          <span class="size">{{ formatBytes(child.size) }}</span>
-        </div>
-        <p v-if="focusChildren.length === 0" class="empty">Empty directory</p>
-      </aside>
+      <FileList :children="focusChildren" :total-size="focusSize" @select="flyToChild" />
 
       <section class="treemap-pane">
         <MapTreemap
@@ -263,127 +208,10 @@ function percentOfFocus(node: TreeChild): number {
   border-color: var(--accent);
 }
 
-.status {
-  font-size: 0.85rem;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.status .badge {
-  color: var(--danger);
-}
-
-.status .muted {
-  color: var(--muted);
-}
-
-.status.error {
-  color: var(--danger);
-}
-
-.breadcrumbs {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.4rem 1rem;
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-}
-
-.breadcrumbs button {
-  background: none;
-  border: none;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0.15rem 0.4rem;
-  white-space: nowrap;
-}
-
-.breadcrumbs button:not(:last-child)::after {
-  content: "/";
-  margin-left: 0.25rem;
-  color: var(--muted);
-}
-
 .content {
   flex: 1;
   display: flex;
   min-height: 0;
-}
-
-.list-pane {
-  width: 280px;
-  overflow-y: auto;
-  border-right: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.list-row {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 0.4rem;
-  align-items: center;
-  padding: 0.35rem 0.6rem;
-  font-size: 0.85rem;
-}
-
-.list-row.dir {
-  cursor: pointer;
-}
-
-.list-row:hover {
-  background: var(--hover);
-}
-
-.list-row .bar {
-  position: absolute;
-  inset: 0;
-  background: var(--bar);
-  z-index: 0;
-}
-
-.list-row .icon,
-.list-row .name,
-.list-row .size {
-  position: relative;
-  z-index: 1;
-}
-
-.list-row .icon {
-  color: var(--muted);
-}
-
-.list-row.dir .icon {
-  color: inherit;
-}
-
-.list-row .name {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.list-row .size {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.list-row.error .name {
-  color: var(--danger);
-}
-
-.list-row.error .icon {
-  color: var(--danger);
-}
-
-.empty {
-  padding: 0.6rem;
-  color: var(--muted);
-  font-size: 0.85rem;
 }
 
 .treemap-pane {
