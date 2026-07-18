@@ -1,6 +1,6 @@
-import { readdir, lstat } from "node:fs/promises";
+import { opendir, lstat } from "node:fs/promises";
 import { join, basename } from "node:path";
-import type { Dirent } from "node:fs";
+import type { Dir, Dirent } from "node:fs";
 import type { NodeKind } from "@webdirstat/shared";
 import { createLimiter } from "./limiter.ts";
 
@@ -29,7 +29,7 @@ export interface WalkSink {
 export interface ScanOptions {
   signal?: AbortSignal;
   onProgress?: (entries: number, bytes: number, path: string) => void;
-  /** Max concurrent readdir/lstat syscalls in flight, across the whole tree. */
+  /** Max concurrent opendir/lstat syscalls in flight, across the whole tree. */
   concurrency?: number;
 }
 
@@ -42,6 +42,64 @@ export interface ScanResult {
 
 const PROGRESS_INTERVAL_MS = 150;
 
+/** What draining a directory yields: aggregate size, direct-child count, and a read error if one aborted the listing. */
+interface DirWalk {
+  size: number;
+  count: number;
+  readError: string | null;
+}
+
+/**
+ * Drains `dir` one entry at a time (never buffering the whole listing the way
+ * `readdir` does, so memory stays O(depth) for the listing too) while running up
+ * to `width` child walks concurrently. Reads are strictly sequential — the driver
+ * loop is the only caller of `dir.read()`, so no directory-handle locking is
+ * needed. `width` only needs headroom above the shared syscall limiter to keep it
+ * saturated; the limiter still caps real I/O. Always closes the handle.
+ */
+async function drainDir(dir: Dir, width: number, fn: (dirent: Dirent) => Promise<number>): Promise<DirWalk> {
+  let size = 0;
+  let count = 0;
+  let readError: string | null = null;
+  let abort: unknown = null;
+  const inFlight = new Set<Promise<void>>();
+
+  // Child walks fold their bytes into `size` and never reject (abort is captured), so
+  // the tracking promises stay settle-only — Promise.race/allSettled see no rejections.
+  const run = async (dirent: Dirent): Promise<void> => {
+    try {
+      const bytes = await fn(dirent);
+      size += bytes; // read+write in one tick — `size += await …` would read size *before* the await and lose concurrent updates.
+    } catch (error) {
+      abort ??= error;
+    }
+  };
+
+  try {
+    while (abort === null) {
+      let dirent: Dirent | null;
+      try {
+        dirent = await dir.read();
+      } catch (error) {
+        readError = (error as NodeJS.ErrnoException).code ?? "EIO";
+        break;
+      }
+      if (dirent === null) break;
+      count++;
+      if (inFlight.size >= width) await Promise.race(inFlight);
+      const p = run(dirent);
+      inFlight.add(p);
+      void p.finally(() => inFlight.delete(p));
+    }
+  } finally {
+    await Promise.allSettled(inFlight);
+    await dir.close().catch(() => {});
+  }
+
+  if (abort !== null) throw abort;
+  return { size, count, readError };
+}
+
 /**
  * Recursively walks a directory, streaming every entry into `sink` and aggregating
  * sizes bottom-up. Never follows symlinks (they are streamed as zero-size leaves).
@@ -49,6 +107,9 @@ const PROGRESS_INTERVAL_MS = 150;
 export async function scanTree(rootPath: string, sink: WalkSink, options: ScanOptions = {}): Promise<ScanResult> {
   const { signal, onProgress, concurrency = 4 } = options;
   const withLimit = createLimiter(concurrency);
+  // Per-directory fan-out cap: headroom above `concurrency` (some entries are symlinks/dirs
+  // that don't spend an lstat slot) while keeping live promises O(width · depth), not O(width).
+  const fanout = Math.max(concurrency * 2, 64);
 
   let entries = 0;
   let bytes = 0;
@@ -72,9 +133,9 @@ export async function scanTree(rootPath: string, sink: WalkSink, options: ScanOp
     entries++;
     const id = sink.enterDir(parentId, name, null);
 
-    let dirents: Dirent[];
+    let dir: Dir;
     try {
-      dirents = await withLimit(() => readdir(absPath, { withFileTypes: true }));
+      dir = await withLimit(() => opendir(absPath));
     } catch (error) {
       tick(absPath);
       sink.exitDir(id, 0, 0, (error as NodeJS.ErrnoException).code ?? "EACCES");
@@ -82,9 +143,8 @@ export async function scanTree(rootPath: string, sink: WalkSink, options: ScanOp
     }
 
     tick(absPath);
-    const childSizes = await Promise.all(dirents.map((dirent) => walkEntry(id, absPath, dirent)));
-    const size = childSizes.reduce((sum, s) => sum + s, 0);
-    sink.exitDir(id, size, dirents.length, null);
+    const { size, count, readError } = await drainDir(dir, fanout, (dirent) => walkEntry(id, absPath, dirent));
+    sink.exitDir(id, size, count, readError);
     return { id, size };
   }
 
