@@ -12,6 +12,7 @@ import { registerBatchRoute } from "./routes/batch.ts";
 import { registerScanRoutes } from "./routes/scan.ts";
 import { registerStatusRoutes } from "./routes/status.ts";
 import { registerScheduleRoutes } from "./routes/schedule.ts";
+import type { RouteContext } from "./routes/context.ts";
 import { createStaticHandler } from "./static/serve.ts";
 
 const config = await loadConfig();
@@ -42,12 +43,13 @@ app.use(
   }),
 );
 
-registerRootsRoute(app, config);
-registerTreeRoute(app, config, store);
-registerBatchRoute(app, config, store);
-registerScanRoutes(app, scanner);
-registerStatusRoutes(app, config, store, scanner);
-registerScheduleRoutes(app, config, store, scheduler);
+const ctx: RouteContext = { app, config, store, scanner, scheduler };
+registerRootsRoute(ctx);
+registerTreeRoute(ctx);
+registerBatchRoute(ctx);
+registerScanRoutes(ctx);
+registerStatusRoutes(ctx);
+registerScheduleRoutes(ctx);
 
 if (config.clientDist) {
   app.get("/**", createStaticHandler(config.clientDist));

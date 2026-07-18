@@ -1,17 +1,26 @@
-import { getQuery, HTTPError } from "h3";
-import type { H3, H3Event } from "h3";
+import { defineHandler, getValidatedQuery, HTTPError } from "h3";
+import { z } from "zod";
 import type { TreeSlice } from "@webdirstat/shared";
-import type { Config } from "../config.ts";
-import type { Store } from "../store/db.ts";
 import { childrenOf, resolvePathToNode } from "../store/nodes.ts";
 import { findRoot } from "../scan/resolve-path.ts";
 import { pinGeneration } from "./generation.ts";
+import type { RouteFactory } from "./context.ts";
 
 const DEFAULT_LIMIT = 1000;
 const MAX_LIMIT = 10_000;
 
-function parseLimit(raw: unknown): number {
-  const n = typeof raw === "string" ? Number(raw) : NaN;
+/**
+ * Query contract. Params arrive as strings, so `limit` is coerced (and defaulted
+ * when absent/garbage); `generation` is passed through to {@link pinGeneration}.
+ */
+const TreeQuery = z.object({
+  root: z.string().min(1),
+  path: z.string().default(""),
+  limit: z.coerce.number().catch(DEFAULT_LIMIT).default(DEFAULT_LIMIT),
+  generation: z.string().optional(),
+});
+
+function clampLimit(n: number): number {
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_LIMIT;
   return Math.min(Math.floor(n), MAX_LIMIT);
 }
@@ -21,31 +30,31 @@ function parseLimit(raw: unknown): number {
  * `path` addresses durably (root + relative path); the returned children carry
  * generation-scoped `id`s for id-addressed navigation thereafter.
  */
-export function registerTreeRoute(app: H3, config: Config, store: Store): void {
-  app.get("/api/tree", (event: H3Event): TreeSlice => {
-    const query = getQuery(event);
-    const rootId = typeof query.root === "string" ? query.root : "";
-    if (!rootId) throw HTTPError.status(400, "Bad Request", { message: 'Missing "root" query parameter' });
+export const registerTreeRoute: RouteFactory = ({ app, config, store }) => {
+  app.get(
+    "/api/tree",
+    defineHandler(async (event): Promise<TreeSlice> => {
+      const query = await getValidatedQuery(event, TreeQuery);
 
-    const root = findRoot(config.roots, rootId);
-    const path = typeof query.path === "string" ? query.path : "";
-    const limit = parseLimit(query.limit);
+      const root = findRoot(config.roots, query.root);
+      const limit = clampLimit(query.limit);
 
-    const generation = pinGeneration(store, root.id, query.generation);
-    const node = resolvePathToNode(store, root.id, generation, path);
-    if (!node) throw HTTPError.status(404, "Not Found", { message: "Path not found in this generation" });
+      const generation = pinGeneration(store, root.id, query.generation);
+      const node = resolvePathToNode(store, root.id, generation, query.path);
+      if (!node) throw HTTPError.status(404, "Not Found", { message: "Path not found in this generation" });
 
-    const children = node.kind === "directory" ? childrenOf(store, node.id, limit) : { rows: [], childCount: 0 };
+      const children = node.kind === "directory" ? childrenOf(store, node.id, limit) : { rows: [], childCount: 0 };
 
-    const slice: TreeSlice = {
-      generation,
-      root: root.id,
-      path,
-      node: { id: node.id, name: node.name, kind: node.kind, size: node.size, childCount: node.child_count },
-      children: children.rows,
-      childCount: children.childCount,
-    };
-    if ("omittedTail" in children && children.omittedTail) slice.omittedTail = children.omittedTail;
-    return slice;
-  });
-}
+      const slice: TreeSlice = {
+        generation,
+        root: root.id,
+        path: query.path,
+        node: { id: node.id, name: node.name, kind: node.kind, size: node.size, childCount: node.child_count },
+        children: children.rows,
+        childCount: children.childCount,
+      };
+      if ("omittedTail" in children && children.omittedTail) slice.omittedTail = children.omittedTail;
+      return slice;
+    }),
+  );
+};

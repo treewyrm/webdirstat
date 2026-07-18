@@ -62,6 +62,9 @@ importers:
       h3:
         specifier: 2.0.1-rc.25
         version: 2.0.1-rc.25
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -1238,6 +1241,9 @@ packages:
   yuku-parser@0.6.5:
     resolution: {integrity: sha512-9A5zaOqE3X3wcPOTK97CYInpKwaUGYnwfHWasJaI2Je1OhI4pQmRA6YCSh7oKewEb2iJM4xlJdbwwj4Aydty7w==}
 
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+
 snapshots:
 
   '@babel/helper-string-parser@7.29.7': {}
@@ -2122,3 +2128,5 @@ snapshots:
       '@yuku-parser/binding-linux-x64-musl': 0.6.5
       '@yuku-parser/binding-win32-arm64': 0.6.5
       '@yuku-parser/binding-win32-x64': 0.6.5
+
+  zod@4.4.3: {}

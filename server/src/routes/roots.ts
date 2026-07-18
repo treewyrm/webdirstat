@@ -1,7 +1,6 @@
-import type { H3 } from "h3";
 import type { ScanRoot } from "@webdirstat/shared";
-import type { Config } from "../config.ts";
+import type { RouteFactory } from "./context.ts";
 
-export function registerRootsRoute(app: H3, config: Config): void {
+export const registerRootsRoute: RouteFactory = ({ app, config }) => {
   app.get("/api/roots", (): ScanRoot[] => config.roots.map(({ id, label }) => ({ id, label })));
-}
+};
