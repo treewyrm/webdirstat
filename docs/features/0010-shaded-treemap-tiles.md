@@ -2,100 +2,42 @@
 
 Status: **Done**
 
-A display option to switch tile rendering between the current **flat** fill and a
-**shaded / cushioned** fill — the raised, gradient-lit look WinDirStat uses, where
-each tile appears as a rounded pillow so nesting and boundaries read without relying
-on outlines. Raised during first hands-on testing of the pan/zoom treemap
-([feature 0002](0002-pan-zoom-treemap.md)). Client-only.
+A client-only display option to render treemap tiles with a raised, WinDirStat-style
+**cushion** shading instead of the flat fill, so nesting and boundaries read without
+relying on outlines. Raised during first hands-on testing of the pan/zoom treemap
+([feature 0002](0002-pan-zoom-treemap.md)).
 
-## Today
+## What shipped
 
-Tiles are drawn flat in
-[MapTreemap.vue](../../client/src/components/MapTreemap.vue) `drawTile`
-([around L170-184](../../client/src/components/MapTreemap.vue#L170-L184)): a single
-`ctx.fillStyle = colorFor(node); ctx.fillRect(...)` plus a thin dark stroke, with
-directory framing in `drawDirFrame`. `colorFor`
-([color.ts](../../client/src/utils/color.ts)) returns one solid color per tile —
-neutral tones for directories/symlinks, an extension-hash color for files.
+A **Shaded (cushion) tiles** toggle in the Display settings pane
+([DisplaySettings.vue](../../client/src/components/DisplaySettings.vue)), backed by
+`useDisplaySettings.shaded` (default **off**, persisted client-side). Shading is a
+pure rendering-layer transform of the same `colorFor` base color — no protocol,
+server, or layout change. Toggling just repaints (`scheduleDraw`), no refetch/relayout.
 
-Flat fills are crisp and cheap, but with the whole map on screen at once, adjacent
-same-color tiles blur together and depth is carried only by the 1px strokes.
+**Rendering** ([MapTreemap.vue](../../client/src/components/MapTreemap.vue)):
 
-## Change
+- **One color-independent cushion sprite**, built once (`cushionSprite`): a 128×128
+  offscreen canvas holding a soft top-left specular highlight (white alpha) plus
+  all-edge darkening (black alpha). `drawTile` fills the flat base color as before,
+  then `drawImage`s that sprite stretched over the tile (source-over) when shading is
+  on. The base color shows through, and every tile — any color or aspect ratio —
+  reuses the same sprite: one `drawImage` per tile, no per-frame gradient allocation.
+  This sidesteps the per-tile gradient + `(color, size-bucket)` cache the proposal
+  weighed; the accumulated Van Wijk cushion was ruled out as not worth the per-frame
+  cost/state. The tail tile stays flat; labels and shimmer are unaffected (drawn after
+  the overlay).
 
-Add a **shaded** rendering mode. The classic treemap "cushion" technique (Van Wijk &
-Van de Wetering) sums a smooth height bump per nesting level and shades by a surface
-normal, giving each subtree a rounded, lit appearance. A pragmatic canvas
-approximation that keeps `colorFor` as the base color:
+## Crisp single-pixel seams (shipped alongside)
 
-- Replace the flat `fillRect` with a **radial or diagonal gradient** per tile: base
-  color at the tile center/top-left, darkened toward the edges (or a lighter
-  highlight offset to a fixed light direction, darker on the opposite corner).
-  Cheap, no per-level state — reads as a soft cushion immediately.
-The **per-tile gradient** is the approach — most of the visual payoff for a fraction
-of the complexity, and it composes with the existing directory frame and labels. The
-truer accumulated cushion (summing a height/shading factor as the recursion descends
-in `drawNode` to deepen ridge lines between nested siblings) is **not** worth the
-extra per-frame cost and state; ruled out.
+The flat-mode borders were reworked on the same branch. Previously each tile
+`strokeRect`'d all four edges at `lineWidth: 1`, so a shared boundary was painted
+twice and landed on two device pixels (a ~2px seam, doubled again for `drawDirFrame`).
+Now `drawTileBorder` draws only a tile's **top and left** edges — a shared boundary is
+painted once, by the lower/right neighbor — snapped to a device-pixel center at
+`lineWidth = 1/dpr` for a genuine single physical pixel on retina. `drawDirFrame`
+reuses the same helper, so folders and files share one consistent seam
+(`rgba(0,0,0,0.5)`); a directory's outer right/bottom edge is covered by its neighbor,
+the map's outermost edge by the canvas edge.
 
-### Performance
-
-The map is a canvas redrawn on every camera frame (`draw` →
-[MapTreemap.vue:126](../../client/src/components/MapTreemap.vue#L126)). Building a
-`createLinearGradient`/`createRadialGradient` per tile per frame is measurably more
-expensive than a solid fill. Mitigations: cache gradients keyed by
-`(color, rounded-size-bucket)`; or precompute a small set of vertical gradient strips
-and `drawImage`-scale them; or only enable shading below a tile-count threshold. Worth
-a quick profile on a dense tree before committing to the per-tile approach.
-
-## As a display setting
-
-This is a per-viewer visual preference with no server side — it belongs in the
-**display settings pane** ([feature 0007](0007-display-settings-pane.md)) as a
-**Flat / Shaded** toggle (it's exactly the "color scheme knobs" placeholder that doc
-lists). Default **flat** (current behavior); shaded is opt-in.
-
-## Shape of the change
-
-- `MapTreemap.vue`: branch `drawTile` (and possibly `drawDirFrame`) on a `shaded`
-  flag; add the gradient builder + a small gradient cache.
-- Read the flag from the `useDisplaySettings` composable proposed in
-  [feature 0007](0007-display-settings-pane.md); add a **Flat / Shaded** control to
-  `SettingsEditor.vue`.
-- No protocol / server / `colorFor` signature change — shading is a rendering-layer
-  transform of the same base color.
-
-## Open questions
-
-- **Light direction / intensity.** Fixed top-left light is the WinDirStat convention;
-  intensity could itself become a slider, but start fixed.
-- **Interaction with labels & shimmer.** Confirm on-canvas name labels
-  (`drawLabel`) and the load shimmer (`drawShimmer`) still read over a shaded fill.
-
-## Recommendation
-
-Depends on [feature 0007](0007-display-settings-pane.md)'s settings pane existing to
-host the toggle. Implement the **per-tile gradient** cushion behind a **Flat / Shaded**
-switch (default flat), with a gradient cache, and profile against a dense tree before
-enabling by default (leave it opt-in).
-
-## Decision
-
-**Per-tile gradient approximation.** The fuller accumulated-cushion technique is ruled
-out — not worth the added complexity or per-frame cost. Remaining specifics (light
-intensity, gradient caching strategy) settle at implementation time.
-
-## Implemented
-
-Behind a **Shaded (cushion) tiles** toggle in the Display settings pane
-(`useDisplaySettings.shaded`, default off, persisted client-side). Rather than a
-per-tile gradient with a `(color, size-bucket)` cache, the caching problem is sidestepped
-entirely: a **single color-independent cushion sprite** is built once
-([MapTreemap.vue](../../client/src/components/MapTreemap.vue) `cushionSprite`) — a
-128×128 offscreen canvas holding a soft top-left specular highlight (white alpha) plus
-all-edge darkening (black alpha). `drawTile` fills the flat base color as before, then
-`drawImage`s that one sprite stretched over the tile (source-over), so the base color
-shows through and every tile — of any color or aspect ratio — reuses the same sprite.
-One `drawImage` per tile, no gradient allocation per frame. The tail tile stays flat;
-labels and shimmer are unaffected (drawn after the overlay). Toggling the flag just
-`scheduleDraw`s — no refetch or relayout.
+Fixed-top-left light was kept fixed (no intensity slider) — the WinDirStat convention.
