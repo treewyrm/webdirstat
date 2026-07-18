@@ -1,6 +1,7 @@
 import type { RootSchedule } from "@webdirstat/shared";
 import type { ResolvedRoot } from "../config.ts";
 import type { Store } from "../store/db.ts";
+import { scheduleLog } from "../logger.ts";
 import { getSchedule, getScanState } from "../store/settings.ts";
 import { computeNextScanAt, currentWindowEnd, isWindowOpen } from "./schedule.ts";
 import type { Scanner } from "./scanner.ts";
@@ -57,6 +58,7 @@ export class Scheduler {
     if (runningRoot) {
       const schedule = this.scheduleOf(runningRoot);
       if (schedule.onWindowEnd === "abort" && !isWindowOpen(now, schedule.windows, schedule.timezone)) {
+        scheduleLog.info(`${runningRoot}: window closed, aborting running scan`);
         this.scanner.stop();
       }
     }
@@ -67,7 +69,10 @@ export class Scheduler {
       const schedule = this.scheduleOf(root.id);
       const state = getScanState(this.store, root.id);
       const nextAt = computeNextScanAt(now, schedule, state.lastScanStartedAt, state.lastScanEndedAt);
-      if (nextAt != null && nextAt <= now) this.scanner.start(root.id, "scheduled", "queue");
+      if (nextAt != null && nextAt <= now) {
+        scheduleLog.info(`${root.id}: due, queueing scheduled scan`);
+        this.scanner.start(root.id, "scheduled", "queue");
+      }
     }
 
     // 3. Sleep to the next relevant instant.

@@ -56,6 +56,9 @@ importers:
       '@webdirstat/shared':
         specifier: workspace:*
         version: link:../shared
+      consola:
+        specifier: ^3.4.2
+        version: 3.4.2
       h3:
         specifier: 2.0.1-rc.25
         version: 2.0.1-rc.25
@@ -894,6 +897,10 @@ packages:
   cac@7.0.0:
     resolution: {integrity: sha512-tixWYgm5ZoOD+3g6UTea91eow5z6AAHaho3g0V9CNSNb45gM8SmflpAc+GRd1InC4AqN/07Unrgp56Y94N9hJQ==}
     engines: {node: '>=20.19.0'}
+
+  consola@3.4.2:
+    resolution: {integrity: sha512-5IKcdX0nnYavi6G7TtOhwkYzyjfJlatbjMjuLSfE2kYT5pMDOilZ4OvMhi637CcDICTmz3wARPoyhqyX1Y+XvA==}
+    engines: {node: ^14.18.0 || >=16.10.0}
 
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
@@ -1757,6 +1764,8 @@ snapshots:
       balanced-match: 1.0.2
 
   cac@7.0.0: {}
+
+  consola@3.4.2: {}
 
   csstype@3.2.3: {}
 

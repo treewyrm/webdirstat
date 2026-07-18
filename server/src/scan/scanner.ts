@@ -1,6 +1,7 @@
-import type { RootSchedule, ScannerState, ScannerStatus, ScanTrigger } from "@webdirstat/shared";
+import type { RootSchedule, ScannerState, ScannerStatus, ScanSummary, ScanTrigger } from "@webdirstat/shared";
 import type { ResolvedRoot } from "../config.ts";
 import type { Store } from "../store/db.ts";
+import { formatBytes, formatDuration, scanLog } from "../logger.ts";
 import { getSchedule, recordScanEnd, recordScanStart } from "../store/settings.ts";
 import type { ScanWorkerCommand, ScanWorkerData, ScanWorkerMessage } from "./scan-worker.ts";
 import type { ScanWorkerFactory, ScanWorkerHandle } from "./worker-factory.ts";
@@ -123,6 +124,7 @@ export class Scanner {
     const running: Running = { rootId, startedAt, trigger, worker, settled: false };
     this.running = running;
     this.state = { phase: "scanning", root: rootId, startedAt, trigger, progress: null };
+    scanLog.start(`${rootId}: scan started (${trigger})`);
 
     worker.on("message", (msg: ScanWorkerMessage) => this.onMessage(running, msg));
     worker.on("error", (err) => this.settle(running, "error", err.message));
@@ -148,7 +150,7 @@ export class Scanner {
         this.notify();
         break;
       case "done":
-        this.settle(running, "ok");
+        this.settle(running, "ok", undefined, msg.summary);
         break;
       case "aborted":
         this.settle(running, "aborted");
@@ -159,18 +161,38 @@ export class Scanner {
     }
   }
 
-  private settle(running: Running, status: "ok" | "aborted" | "error", message?: string): void {
+  private settle(running: Running, status: "ok" | "aborted" | "error", message?: string, summary?: ScanSummary): void {
     if (running.settled) return;
     running.settled = true;
     recordScanEnd(this.deps.store, running.rootId, Date.now(), status);
     void running.worker.terminate();
     if (this.running === running) this.running = null;
-    if (message && status === "error") console.error(`[webdirstat] scan failed (${running.rootId}): ${message}`);
+    this.logSettle(running, status, message, summary);
 
     this.state = { phase: "idle" };
     this.notify();
     this.runNext();
     if (this.state.phase === "idle") this.onSettled?.();
+  }
+
+  /** One end-of-scan line: success carries the summary, abort/error carry the reason. */
+  private logSettle(running: Running, status: "ok" | "aborted" | "error", message?: string, summary?: ScanSummary): void {
+    const elapsed = formatDuration(Date.now() - running.startedAt);
+    switch (status) {
+      case "ok": {
+        const stats = summary
+          ? `${summary.entries.toLocaleString()} entries, ${formatBytes(summary.bytes)}, gen ${summary.generation}`
+          : "no summary";
+        scanLog.success(`${running.rootId}: scan done in ${elapsed} (${stats})`);
+        break;
+      }
+      case "aborted":
+        scanLog.warn(`${running.rootId}: scan aborted after ${elapsed}`);
+        break;
+      case "error":
+        scanLog.error(`${running.rootId}: scan failed after ${elapsed}${message ? ` — ${message}` : ""}`);
+        break;
+    }
   }
 
   private runNext(): void {

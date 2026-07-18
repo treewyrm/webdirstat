@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { RootSchedule, ScanRoot } from "@webdirstat/shared";
+import { logger } from "./logger.ts";
 import { parseDuration, parseWindows } from "./scan/schedule.ts";
 
 export interface ResolvedRoot extends ScanRoot {
@@ -52,7 +53,7 @@ async function parseRoots(raw: string | undefined): Promise<ResolvedRoot[]> {
     try {
       canonicalPath = await realpath(absolutePath);
     } catch {
-      console.warn(`[webdirstat] root "${label}" (${absolutePath}) does not exist yet`);
+      logger.warn(`root "${label}" (${absolutePath}) does not exist yet`);
     }
 
     roots.push({ id, label: label.trim() || id, absolutePath, canonicalPath });

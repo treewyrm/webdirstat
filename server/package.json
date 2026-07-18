@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@webdirstat/shared": "workspace:*",
+    "consola": "^3.4.2",
     "h3": "2.0.1-rc.25"
   },
   "devDependencies": {

@@ -1,5 +1,6 @@
 import { H3, onError, serve } from "h3";
 import { loadConfig } from "./config.ts";
+import { logger } from "./logger.ts";
 import { Store } from "./store/db.ts";
 import { seedRootSettings } from "./store/settings.ts";
 import { Scanner } from "./scan/scanner.ts";
@@ -37,7 +38,7 @@ app.use(
   // Only surface genuinely unexpected failures; expected 4xx (e.g. the 410 that drives
   // the client's generation re-seed during a rescan) are normal protocol flow, not noise.
   onError((error) => {
-    if (error.unhandled || error.status >= 500) console.error("[webdirstat]", error);
+    if (error.unhandled || error.status >= 500) logger.error(error);
   }),
 );
 
@@ -52,16 +53,17 @@ if (config.clientDist) {
   app.get("/**", createStaticHandler(config.clientDist));
 }
 
-console.log(`[webdirstat] store: ${config.dbPath}`);
-console.log(`[webdirstat] roots: ${config.roots.map((r) => `${r.label}(${r.id})`).join(", ")}`);
+logger.info(`store: ${config.dbPath}`);
+logger.info(`roots: ${config.roots.map((r) => `${r.label}(${r.id})`).join(", ")}`);
 
 serve(app, { port: config.port, hostname: config.host });
+logger.success(`listening on http://${config.host}:${config.port}`);
 
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`[webdirstat] ${signal} received, shutting down`);
+  logger.info(`${signal} received, shutting down`);
   scheduler.stop();
   await scanner.shutdown();
   try {
