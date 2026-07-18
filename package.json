@@ -2,6 +2,8 @@
   "name": "webdirstat",
   "private": true,
   "type": "module",
+  "license": "MIT",
+  "author": "Yuriy Alekseyev <treewyrm@gmail.com>",
   "engines": {
     "node": ">=24"
   },

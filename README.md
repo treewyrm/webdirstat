@@ -1,5 +1,7 @@
 # WebDirStat
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A WinDirStat-style disk usage visualizer for a NAS, running as a single Docker container.
 
 It scans configured roots in the background into a persistent SQLite store and serves the
