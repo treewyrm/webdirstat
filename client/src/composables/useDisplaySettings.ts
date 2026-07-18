@@ -14,13 +14,15 @@ export interface DisplaySettings {
   hoverFullPath: boolean;
   /** Binary (KiB/MiB) vs. decimal (KB/MB) byte units. */
   sizeUnits: SizeUnitBase;
+  /** Cushion (shaded) tile rendering vs. the flat fill (feature 0010). */
+  shaded: boolean;
 }
 
 const KEY = "wds.display";
 const VERSION = 1;
 
 function defaults(): DisplaySettings {
-  return { version: VERSION, hoverFullPath: false, sizeUnits: "binary" };
+  return { version: VERSION, hoverFullPath: false, sizeUnits: "binary", shaded: false };
 }
 
 function load(): DisplaySettings {

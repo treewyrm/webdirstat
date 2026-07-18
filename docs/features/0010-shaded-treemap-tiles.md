@@ -1,6 +1,6 @@
 # 0010 — Shaded (cushion) treemap tiles
 
-Status: **Proposed**
+Status: **Done**
 
 A display option to switch tile rendering between the current **flat** fill and a
 **shaded / cushioned** fill — the raised, gradient-lit look WinDirStat uses, where
@@ -84,3 +84,18 @@ enabling by default (leave it opt-in).
 **Per-tile gradient approximation.** The fuller accumulated-cushion technique is ruled
 out — not worth the added complexity or per-frame cost. Remaining specifics (light
 intensity, gradient caching strategy) settle at implementation time.
+
+## Implemented
+
+Behind a **Shaded (cushion) tiles** toggle in the Display settings pane
+(`useDisplaySettings.shaded`, default off, persisted client-side). Rather than a
+per-tile gradient with a `(color, size-bucket)` cache, the caching problem is sidestepped
+entirely: a **single color-independent cushion sprite** is built once
+([MapTreemap.vue](../../client/src/components/MapTreemap.vue) `cushionSprite`) — a
+128×128 offscreen canvas holding a soft top-left specular highlight (white alpha) plus
+all-edge darkening (black alpha). `drawTile` fills the flat base color as before, then
+`drawImage`s that one sprite stretched over the tile (source-over), so the base color
+shows through and every tile — of any color or aspect ratio — reuses the same sprite.
+One `drawImage` per tile, no gradient allocation per frame. The tail tile stays flat;
+labels and shimmer are unaffected (drawn after the overlay). Toggling the flag just
+`scheduleDraw`s — no refetch or relayout.

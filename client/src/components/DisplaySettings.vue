@@ -12,6 +12,11 @@ const { settings, reset } = useDisplaySettings();
       <span>Hover label shows full path</span>
     </label>
 
+    <label class="row toggle">
+      <input v-model="settings.shaded" type="checkbox" />
+      <span>Shaded (cushion) tiles</span>
+    </label>
+
     <label class="row">
       <span>Size units</span>
       <select v-model="settings.sizeUnits">

@@ -5,7 +5,10 @@ import { zoom, zoomIdentity, type D3ZoomEvent, type ZoomBehavior, type ZoomTrans
 import type { TreeChild, TreeSlice } from "@webdirstat/shared";
 import { fetchTreeBatch } from "../api";
 import { colorFor } from "../utils/color";
+import { useDisplaySettings } from "../composables/useDisplaySettings";
 import { indexById, layoutInto, makeRoot, type WorldNode } from "../treemap/layout";
+
+const { settings } = useDisplaySettings();
 
 const props = defineProps<{ rootId: string; seed: TreeSlice }>();
 const emit = defineEmits<{
@@ -70,6 +73,9 @@ onBeforeUnmount(() => {
 
 // Reseed whenever the root slice identity changes (new root or new generation).
 watch(() => props.seed, reseed);
+
+// Flat/Shaded is a pure rendering-layer change — just repaint, no refetch/relayout.
+watch(() => settings.shaded, scheduleDraw);
 
 function measure(): void {
   const wrapper = wrapperRef.value!;
@@ -178,6 +184,10 @@ function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, w: number
   } else {
     ctx.fillStyle = colorFor(node);
     ctx.fillRect(x, y, w, h);
+    // Cushion look: overlay a cached, color-independent light/shadow sprite (feature
+    // 0010). One drawImage per tile — cheaper than a per-tile gradient, and the base
+    // color still shows through the translucent overlay.
+    if (settings.shaded && w > 3 && h > 3) ctx.drawImage(cushionSprite(), x, y, w, h);
     if (w > 3 && h > 3) {
       ctx.strokeStyle = "rgba(0,0,0,0.25)";
       ctx.lineWidth = 1;
@@ -185,6 +195,34 @@ function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, w: number
     }
   }
   drawLabel(ctx, x, y, w, h, node);
+}
+
+// Built once, reused for every shaded tile: a soft top-left specular highlight plus
+// all-edge darkening that reads as a raised pillow when stretched over any tile. It's
+// color-independent (pure white/black alpha), so it composes over the flat base fill
+// with source-over and needs no per-color cache.
+let cushionCanvas: HTMLCanvasElement | null = null;
+function cushionSprite(): HTMLCanvasElement {
+  if (cushionCanvas) return cushionCanvas;
+  const s = 128;
+  const c = document.createElement("canvas");
+  c.width = s;
+  c.height = s;
+  const g = c.getContext("2d")!;
+  // Edge shadow: dark toward the rim so the tile appears to bulge upward.
+  const edge = g.createRadialGradient(s / 2, s / 2, s * 0.12, s / 2, s / 2, s * 0.72);
+  edge.addColorStop(0, "rgba(0,0,0,0)");
+  edge.addColorStop(1, "rgba(0,0,0,0.32)");
+  g.fillStyle = edge;
+  g.fillRect(0, 0, s, s);
+  // Specular highlight offset toward a fixed top-left light.
+  const spec = g.createRadialGradient(s * 0.32, s * 0.3, 0, s * 0.32, s * 0.3, s * 0.62);
+  spec.addColorStop(0, "rgba(255,255,255,0.35)");
+  spec.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = spec;
+  g.fillRect(0, 0, s, s);
+  cushionCanvas = c;
+  return cushionCanvas;
 }
 
 function drawDirFrame(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, node: WorldNode): void {
