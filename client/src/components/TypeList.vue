@@ -128,11 +128,7 @@ function barWidth(bytes: number): number {
 
 <style scoped>
 .types {
-  width: 260px;
-  overflow-y: auto;
-  border-right: 1px solid var(--border);
-  flex-shrink: 0;
-  background: var(--hover);
+  /* Sizing, scroll, border, and background are owned by the side shell (App.vue). */
 }
 
 .head {
