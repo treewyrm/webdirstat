@@ -1,17 +1,44 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import type { TreeChild } from "@webdirstat/shared";
 import { File, Folder, Link2 } from "@lucide/vue";
 import { useByteFormat } from "../composables/useDisplaySettings";
 
 const formatBytes = useByteFormat();
 
-/** Size-sorted children of the focused directory; clicking a row selects it. */
-const props = defineProps<{ children: TreeChild[]; totalSize: number }>();
+/** Max rows the pane renders before folding the rest into one summary row (feature 0015). */
+const ROW_CAP = 50;
+
+/**
+ * Size-sorted children of the focused directory; clicking a row selects it.
+ * `omittedTail` is the map's remainder past its fetch cap (count + summed bytes),
+ * plumbed through so the pane's "… X more" row reports it instead of dropping it.
+ */
+const props = defineProps<{
+  children: TreeChild[];
+  totalSize: number;
+  omittedTail?: { count: number; bytes: number } | null;
+}>();
 const emit = defineEmits<{
   select: [child: TreeChild];
   /** The hovered row's node id (feature 0012, list → map highlight), or null on leave. */
   hover: [id: number | null];
 }>();
+
+/** The rows actually drawn: at most ROW_CAP, largest-first (children arrive sorted). */
+const visibleChildren = computed(() => props.children.slice(0, ROW_CAP));
+
+/**
+ * The single folded remainder: rows hidden by the cap plus the map's omitted tail.
+ * `null` when nothing is hidden, so the summary row is omitted entirely.
+ */
+const remainder = computed(() => {
+  const hidden = props.children.slice(ROW_CAP);
+  const count = hidden.length + (props.omittedTail?.count ?? 0);
+  if (count === 0) return null;
+  const bytes = hidden.reduce((sum, c) => sum + c.size, 0) + (props.omittedTail?.bytes ?? 0);
+  return { count, bytes };
+});
 
 /** Leading list-row glyph for a child's kind (directory / symlink / everything else). */
 function iconForKind(kind: TreeChild["kind"]) {
@@ -28,7 +55,7 @@ function percentOfTotal(node: TreeChild): number {
 <template>
   <aside class="list-pane">
     <div
-      v-for="child in children"
+      v-for="child in visibleChildren"
       :key="child.id"
       class="list-row"
       :class="{ error: !!child.error, dir: child.kind === 'directory' }"
@@ -40,6 +67,12 @@ function percentOfTotal(node: TreeChild): number {
       <component :is="iconForKind(child.kind)" class="icon" :size="14" aria-hidden="true" />
       <span class="name" :title="child.name">{{ child.name }}</span>
       <span class="size">{{ formatBytes(child.size) }}</span>
+    </div>
+    <!-- The list analog of the map's omitted-tail tile: muted, dashed, inert. -->
+    <div v-if="remainder" class="list-row more">
+      <File class="icon" :size="14" aria-hidden="true" />
+      <span class="name">… {{ remainder.count.toLocaleString() }} more</span>
+      <span class="size">{{ formatBytes(remainder.bytes) }}</span>
     </div>
     <p v-if="children.length === 0" class="empty">Empty directory</p>
   </aside>
@@ -108,6 +141,21 @@ function percentOfTotal(node: TreeChild): number {
 
 .list-row.error .icon {
   color: var(--danger);
+}
+
+.list-row.more {
+  color: var(--muted);
+  border-top: 1px dashed var(--border);
+  cursor: default;
+  font-style: italic;
+}
+
+.list-row.more:hover {
+  background: transparent;
+}
+
+.list-row.more .icon {
+  color: var(--muted);
 }
 
 .empty {

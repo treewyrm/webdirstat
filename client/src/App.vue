@@ -45,6 +45,8 @@ const generation = computed(() => seed.value?.generation ?? null);
 const focusChain = shallowRef<Array<{ id: number; name: string; path: string }>>([]);
 const focusChildren = shallowRef<TreeChild[]>([]);
 const focusSize = ref(0);
+/** Remainder past this level's fetch cap, for the list's "… X more" row (feature 0015). */
+const focusOmittedTail = shallowRef<{ count: number; bytes: number } | null>(null);
 const hoveredNode = shallowRef<WorldNode | null>(null);
 /** Node id of the hovered file-list row, mirrored onto the map as a tile highlight. */
 const highlightedId = ref<number | null>(null);
@@ -127,6 +129,7 @@ async function loadRoot(): Promise<void> {
   seed.value = null;
   focusChain.value = [];
   focusChildren.value = [];
+  focusOmittedTail.value = null;
   try {
     seed.value = await fetchTree(rootId, "", { minSize: settings.minSize });
   } catch (error) {
@@ -145,10 +148,16 @@ async function onStartStop(): Promise<void> {
   }
 }
 
-function onFocus(payload: { chain: Array<{ id: number; name: string; path: string }>; children: TreeChild[]; size: number }): void {
+function onFocus(payload: {
+  chain: Array<{ id: number; name: string; path: string }>;
+  children: TreeChild[];
+  size: number;
+  omittedTail?: { count: number; bytes: number };
+}): void {
   focusChain.value = payload.chain;
   focusChildren.value = payload.children;
   focusSize.value = payload.size;
+  focusOmittedTail.value = payload.omittedTail ?? null;
 }
 
 function flyToChild(child: TreeChild): void {
@@ -203,6 +212,7 @@ function revealResult(result: SearchResult): void {
             v-if="activeTab === 'files'"
             :children="focusChildren"
             :total-size="focusSize"
+            :omitted-tail="focusOmittedTail"
             @select="flyToChild"
             @hover="(id) => (highlightedId = id)"
           />

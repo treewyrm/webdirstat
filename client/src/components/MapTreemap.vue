@@ -12,7 +12,14 @@ const { settings } = useDisplaySettings();
 
 const props = defineProps<{ rootId: string; seed: TreeSlice; highlightId?: number | null }>();
 const emit = defineEmits<{
-  focus: [{ chain: Array<{ id: number; name: string; path: string }>; children: TreeChild[]; size: number }];
+  focus: [
+    {
+      chain: Array<{ id: number; name: string; path: string }>;
+      children: TreeChild[];
+      size: number;
+      omittedTail?: { count: number; bytes: number };
+    },
+  ];
   hover: [WorldNode | null];
   stale: [];
   agebounds: [AgeBounds | null];
@@ -719,6 +726,9 @@ function emitFocus(): void {
     chain: chain.map((c) => ({ id: c.id, name: c.name, path: c.path })),
     children,
     size: focusNode.size,
+    // The remainder past this level's fetch cap — plumbed so the list pane can report
+    // it in its "… X more" summary row instead of silently dropping it (feature 0015).
+    ...(focusNode.omittedTail ? { omittedTail: focusNode.omittedTail } : {}),
   });
 }
 </script>

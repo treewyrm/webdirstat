@@ -1,6 +1,6 @@
 # 0015 — Cap the number of file-list rows
 
-Status: **Proposed**
+Status: **Done**
 
 The left **file-list pane** renders every child of the focused directory. It's sorted
 largest-first, so for a very wide directory (many thousands of children) only the top
@@ -65,4 +65,13 @@ Client-only; no protocol or server change.
 
 ## Decision
 
-Not yet decided — pending discussion.
+Implemented as the "Shape of the change" section describes:
+
+- **N = 50** (`ROW_CAP` in `FileList.vue`) — the smaller, human-scale "top files" number,
+  making the `omittedTail` plumbing mandatory (below), not the 200 DOM-cost-only variant.
+- **`omittedTail` plumbed** from the focus node through the `@focus` payload
+  (`MapTreemap.vue` → `App.vue` → `FileList.vue`), fixing the prior silent under-report.
+- **Single inert summary row** — `FileList.vue` folds the locally hidden rows
+  (`children.slice(50)`) plus any `omittedTail` into one muted, dashed **"… X more (Y)"**
+  row. It carries no `id`, is not a hover/fly target. Inert for this first cut (no
+  reveal-more / raise-cap interaction).
