@@ -55,6 +55,10 @@ const scanLine = computed<string | null>(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Take the remaining toolbar width and allow shrinking below content size, so a
+     long scan path ellipsizes here instead of wrapping the whole header to a new row. */
+  flex: 1;
+  min-width: 0;
 }
 
 .status .badge {
