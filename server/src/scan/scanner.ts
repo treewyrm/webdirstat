@@ -1,9 +1,9 @@
-import { Worker } from "node:worker_threads";
 import type { RootSchedule, ScannerState, ScannerStatus, ScanTrigger } from "@webdirstat/shared";
 import type { ResolvedRoot } from "../config.ts";
 import type { Store } from "../store/db.ts";
 import { getSchedule, recordScanEnd, recordScanStart } from "../store/settings.ts";
 import type { ScanWorkerCommand, ScanWorkerData, ScanWorkerMessage } from "./scan-worker.ts";
+import type { ScanWorkerFactory, ScanWorkerHandle } from "./worker-factory.ts";
 
 export type StartOutcome = "started" | "queued" | "preempting" | "unknown-root";
 export type ScanMode = "queue" | "preempt";
@@ -18,7 +18,7 @@ interface Running {
   rootId: string;
   startedAt: number;
   trigger: ScanTrigger;
-  worker: Worker;
+  worker: ScanWorkerHandle;
   settled: boolean;
 }
 
@@ -27,8 +27,8 @@ export interface ScannerDeps {
   dbPath: string;
   scheduleDefaults: RootSchedule;
   roots: ResolvedRoot[];
-  workerUrl: URL;
-  workerExecArgv?: string[];
+  /** DI seam: spawns the walk worker. See {@link ScanWorkerFactory}. */
+  spawnWorker: ScanWorkerFactory;
 }
 
 /**
@@ -118,10 +118,7 @@ export class Scanner {
       concurrency: schedule.concurrency,
       historyGenerations: schedule.historyGenerations,
     };
-    const worker = new Worker(this.deps.workerUrl, {
-      workerData,
-      execArgv: this.deps.workerExecArgv,
-    });
+    const worker = this.deps.spawnWorker(workerData);
 
     const running: Running = { rootId, startedAt, trigger, worker, settled: false };
     this.running = running;

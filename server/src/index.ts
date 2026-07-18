@@ -3,6 +3,7 @@ import { loadConfig } from "./config.ts";
 import { Store } from "./store/db.ts";
 import { seedRootSettings } from "./store/settings.ts";
 import { Scanner } from "./scan/scanner.ts";
+import { createScanWorkerFactory } from "./scan/worker-factory.ts";
 import { Scheduler } from "./scan/scheduler.ts";
 import { registerRootsRoute } from "./routes/roots.ts";
 import { registerTreeRoute } from "./routes/tree.ts";
@@ -17,19 +18,13 @@ const store = Store.open(config.dbPath);
 
 for (const root of config.roots) seedRootSettings(store, root.id, config.scheduleDefaults);
 
-// Resolve the worker relative to THIS entry module so it works in both dev (tsx/.ts)
-// and the bundled build (tsdown/.js) — index sits one level above scan/ in both.
-const isTs = import.meta.url.endsWith(".ts");
-const workerUrl = new URL(`./scan/scan-worker${isTs ? ".ts" : ".js"}`, import.meta.url);
-const workerExecArgv = isTs ? ["--import", "tsx"] : undefined;
-
 const scanner = new Scanner({
   store,
   dbPath: config.dbPath,
   scheduleDefaults: config.scheduleDefaults,
   roots: config.roots,
-  workerUrl,
-  workerExecArgv,
+  // Resolve the worker entry relative to THIS module (index sits above scan/ in both layouts).
+  spawnWorker: createScanWorkerFactory(import.meta.url),
 });
 const scheduler = new Scheduler(store, config.roots, config.scheduleDefaults, scanner);
 scheduler.start();
