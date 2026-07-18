@@ -93,9 +93,8 @@ export function registerBatchRoute(app: H3, config: Config, store: Store): void 
 
         if (frame.level < depth) {
           for (const child of slice.rows) {
-            if (child.kind === "directory" && child.childCount > 0 && child.size >= threshold) {
-              stack.push({ id: child.id, kind: child.kind, size: child.size, childCount: child.childCount, level: frame.level + 1 });
-            }
+            if (child.kind !== "directory" || child.childCount === 0 || child.size < threshold) continue;
+            stack.push({ id: child.id, kind: child.kind, size: child.size, childCount: child.childCount, level: frame.level + 1 });
           }
         }
       }
