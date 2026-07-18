@@ -1,6 +1,6 @@
 # 0001 — Password protection
 
-Status: **Proposed**
+Status: **Done**
 
 ## Goal
 
@@ -76,4 +76,43 @@ only if a logout button or session expiry turns out to matter in practice.
 
 ## Decision
 
-Not yet decided — pending discussion.
+**Built option B** (session cookie + login form). The logout button and
+cookie expiry were wanted from the start, and h3 v2 ships full session utils
+(`getSession`/`updateSession`/`clearSession`, sealed cookies) — so B's "added
+surface" is small in practice. Basic Auth (A) was rejected mainly for its
+no-logout / browser-native-prompt UX.
+
+### As implemented
+
+Two env vars, both opt-in like `ROOTS` (no `PASSWORD` → gate disabled, app open):
+
+- `PASSWORD` — the shared **login** password. Setting it enables the gate.
+- `SESSION_SECRET` — the server-side **seal key** for the cookie (≥32 chars),
+  distinct from the login password. If unset/too weak, an ephemeral key is
+  generated with a warning (logins reset on restart and don't span replicas —
+  fine for one container; set it to persist them). See
+  [config.ts](../../server/src/config.ts) `loadAuth()`.
+
+Server ([auth.ts](../../server/src/auth.ts) +
+[routes/auth.ts](../../server/src/routes/auth.ts)):
+
+- A blanket `app.use("/api/**")` guard, registered first in
+  [index.ts](../../server/src/index.ts), 401s any `/api` call without a valid
+  session. Exempt: `POST /api/login`, `/api/logout`, `GET /api/session`, and
+  `/api/health` (so the Docker probe stays unauthenticated).
+- `GET /api/session` → `{ required, authenticated }` (always present, even when
+  the gate is off, so the SPA has one probe). `POST /api/login` checks the
+  password with a constant-time compare and seals the session;
+  `POST /api/logout` clears it.
+- The static SPA bundle is served **unauthenticated** (it holds no data) so the
+  login form can load; everything private is under `/api`.
+- Cookie is `httpOnly`, `sameSite=lax`, and **`secure: false`** so it works over
+  plain HTTP on a trusted LAN — put TLS in front (reverse proxy / Tailscale) for
+  any exposure beyond it. Worth a README line, per the note under option A.
+
+Client: a `LoginGate.vue` wrapper (via `Root.vue`) probes `GET /api/session` on
+load and renders the login form or the app; App only mounts past the gate, so
+its startup fetches never race a 401. A `useAuth` composable holds the shared
+state; a **Log out** button appears in the toolbar only when a gate is
+configured. `EventSource` (the scan-status SSE) carries the cookie unmodified,
+so option A's `EventSource`-vs-headers constraint never bit us.

@@ -15,6 +15,7 @@ import { registerScheduleRoutes } from "./routes/schedule.ts";
 import { registerTypesRoute } from "./routes/types.ts";
 import { registerSearchRoute } from "./routes/search.ts";
 import { registerHealthRoute } from "./routes/health.ts";
+import { registerAuthRoutes } from "./routes/auth.ts";
 import type { RouteContext } from "./routes/context.ts";
 import { createStaticHandler } from "./static/serve.ts";
 
@@ -47,6 +48,8 @@ app.use(
 );
 
 const ctx: RouteContext = { app, config, store, scanner, scheduler };
+// Registered first so the /api/** password guard (feature 0001) fronts every data route.
+registerAuthRoutes(ctx);
 registerRootsRoute(ctx);
 registerTreeRoute(ctx);
 registerBatchRoute(ctx);

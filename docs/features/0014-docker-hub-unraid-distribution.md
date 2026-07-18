@@ -4,8 +4,8 @@ Status: **Proposed**
 
 Related: [Dockerfile](../../Dockerfile) (the runtime image this ships),
 [config.ts](../../server/src/config.ts) (the env vars a template must expose),
-[feature 0001 — password protection](0001-password-protection.md) (basically a
-prerequisite once this is reachable on a home network).
+[feature 0001 — password protection](0001-password-protection.md) (**Done** —
+the `PASSWORD`/`SESSION_SECRET` gate; the template should surface `PASSWORD`).
 
 ## Goal
 
@@ -29,9 +29,11 @@ feature is almost entirely **packaging, publishing, and defaults** — not app c
    template "just works" on both.
 3. **No CA template.** Unraid CA needs an XML template (the `<Container>` schema)
    describing ports, volumes, env vars, an icon, and a support/overview blurb.
-4. **No auth.** The moment this is reachable on a home LAN it exposes real host
-   directory *structure* (not contents, but names + sizes). See 0001 — some
-   minimal gate should ship before this is promoted for general use.
+4. ~~**No auth.**~~ **Done** (feature 0001). A shared-password gate ships behind
+   the `PASSWORD` env var (opt-in; `SESSION_SECRET` seals the cookie). The CA
+   template should expose `PASSWORD` as a prominent field and note that the
+   cookie is `secure:false`, so TLS (reverse proxy / Tailscale) belongs in front
+   for anything past a trusted LAN.
 
 ## Shape of the change
 
@@ -85,6 +87,10 @@ submitted to the CA app feed. Must encode:
     `=` — must use the explicit `Label=/path` form. Multi-root story: either
     mount several host shares under `/data/<name>` and set
     `ROOTS=Movies=/data/movies,...`, or add more `/dataN` volume mappings.
+  - `PASSWORD` (feature 0001) — the shared login password; prominent, empty by
+    default (blank = open). `SESSION_SECRET` — advanced; if left blank the app
+    generates an ephemeral key (logins reset on container restart), so the
+    template should ideally seed a random one.
   - `SCAN_ENABLED`, `SCAN_INTERVAL`, `SCAN_WINDOWS`, `SCAN_CONCURRENCY`,
     `SCAN_MIN_INTERVAL`, `SCAN_ON_WINDOW_END`, `HISTORY_GENERATIONS` — all
     advanced/optional; hide behind "Show more settings."
@@ -98,9 +104,9 @@ submitted to the CA app feed. Must encode:
   account and whether the repo should be public.
 - **PUID/PGID vs. fixed uid 1000** — adopt the Unraid-idiomatic pattern (leaning
   yes) or document the fixed user? Affects `/db` write permissions on first run.
-- **Auth before promotion** — does 0001 (or at least an optional
-  `AUTH_PASSWORD` env → basic gate) need to land first? A disk-map of someone's
-  NAS is mildly sensitive; recommend shipping *some* opt-in gate concurrently.
+- ~~**Auth before promotion**~~ **Resolved** — feature 0001 landed the
+  `PASSWORD` gate, so exposure is opt-in-safe. Remaining nicety: the CA template
+  should default `SESSION_SECRET` to a generated value so logins survive restart.
 - **Multi-root ergonomics** — is "many host shares under one `/data`" enough, or
   do we want first-class multi-volume support in the template? Probably start
   with the single `/data` + subfolders pattern and document it.
@@ -111,10 +117,10 @@ submitted to the CA app feed. Must encode:
 
 Sequence it as: **(1)** tighten the Dockerfile (OCI labels, ~~`HEALTHCHECK`~~ ✅,
 PUID/PGID entrypoint), **(2)** add the tag-triggered multi-arch build-push
-workflow to Docker Hub, **(3)** ship a minimal auth gate (0001) so exposure is
-opt-in-safe, **(4)** author + submit the Unraid CA template. Steps 1–2 are pure
-packaging and can happen anytime the app is stable; 3 gates the "recommend to
-others" moment; 4 is the last mile to one-click install.
+workflow to Docker Hub, ~~**(3)** ship a minimal auth gate (0001)~~ ✅ **done**,
+**(4)** author + submit the Unraid CA template. Steps 1–2 are pure packaging and
+can happen anytime the app is stable; 3 gated the "recommend to others" moment
+and has landed; 4 is the last mile to one-click install.
 
 ## Decision
 
