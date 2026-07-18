@@ -26,3 +26,12 @@ Filed:
   Kind icons (first Lucide dependency) + name truncation in the list pane.
 - [0010 — Shaded (cushion) treemap tiles](0010-shaded-treemap-tiles.md) —
   *Proposed.* Cushion shading for depth cues on the treemap.
+- [0011 — Color tiles by age](0011-color-by-age.md) — *Proposed.* Optional
+  mtime-based tile coloring (old→dark, new→bright); client-only, `mtimeMs` already ships.
+- [0012 — Highlight map tile on list hover](0012-list-hover-map-highlight.md) —
+  *Proposed.* Hovering a file-list row highlights its tile on the map (if visible);
+  the list → map mirror of the existing map → list hover. Client-only.
+- [0013 — Fold small files into one tile](0013-fold-small-files.md) — *Proposed.*
+  Fold children below a user-set size into one synthetic tile (a size-threshold
+  sibling of the `omittedTail` count-cap tile). Fork: client px threshold vs. server
+  byte threshold; leaning client-only first.
