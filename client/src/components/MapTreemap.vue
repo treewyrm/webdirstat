@@ -247,9 +247,9 @@ function cushionSprite(): HTMLCanvasElement {
 }
 
 function drawDirFrame(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, node: WorldNode): void {
-  ctx.strokeStyle = "rgba(0,0,0,0.5)";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  // Same top+left, device-pixel seam as leaf tiles, so a folder's border is a single
+  // crisp pixel too — no doubled seam against a sibling folder's frame or its own tiles.
+  drawTileBorder(ctx, x, y, w, h);
   // A slim header strip with the folder name so nesting stays legible.
   if (w > 60 && h > 22) {
     ctx.fillStyle = "rgba(0,0,0,0.35)";
