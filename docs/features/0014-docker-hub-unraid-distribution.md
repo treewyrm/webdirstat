@@ -48,8 +48,13 @@ feature is almost entirely **packaging, publishing, and defaults** — not app c
 ### The Dockerfile is basically ready — small tightening
 
 - Add OCI labels (above).
-- Add a **`HEALTHCHECK`** hitting a cheap endpoint (e.g. `GET /api/roots`) so
-  Unraid's UI shows green/red container health.
+- ~~Add a **`HEALTHCHECK`**~~ **Done.** [Dockerfile](../../Dockerfile) now
+  declares a `HEALTHCHECK` hitting a dedicated
+  [`GET /api/health`](../../server/src/routes/health.ts) probe (cheaper and more
+  honest than `/api/roots`: it also pings the SQLite store with `SELECT 1` and
+  returns **503** if the store is unreachable, so Unraid's UI shows green/red
+  correctly). The probe uses Node's global `fetch` rather than `wget` to avoid
+  depending on busybox's HTTP-status handling.
 - Confirm the `/db` volume ownership story survives a fresh Unraid install:
   Unraid bind-mounts host paths and often runs containers with `PUID`/`PGID`
   conventions. The image currently hardcodes `USER node` (uid 1000). Decide
@@ -104,7 +109,7 @@ submitted to the CA app feed. Must encode:
 
 ## Recommendation
 
-Sequence it as: **(1)** tighten the Dockerfile (OCI labels, `HEALTHCHECK`,
+Sequence it as: **(1)** tighten the Dockerfile (OCI labels, ~~`HEALTHCHECK`~~ ✅,
 PUID/PGID entrypoint), **(2)** add the tag-triggered multi-arch build-push
 workflow to Docker Hub, **(3)** ship a minimal auth gate (0001) so exposure is
 opt-in-safe, **(4)** author + submit the Unraid CA template. Steps 1–2 are pure

@@ -55,5 +55,10 @@ EXPOSE 8080
 # /data: read-only scanned share(s). /db: writable store.
 VOLUME ["/data", "/db"]
 
+# Orchestrator probe. Node's global fetch (24+) avoids depending on wget's status handling;
+# shell form so $PORT expands. Non-2xx (e.g. 503 when the store is unreachable) exits 1.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 USER node
 CMD ["node", "server/dist/index.js"]
