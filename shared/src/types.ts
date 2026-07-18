@@ -103,6 +103,29 @@ export interface TreeBatchResponse {
   truncated?: boolean;
 }
 
+// --- File-type (extension) rollup (GET /api/roots/:id/types) — feature 0005 ---
+
+/** One extension's whole-root aggregate, accumulated during the scan walk. */
+export interface TypeRollupEntry {
+  /** Lowercased extension without the dot; "" is the extension-less bucket. */
+  ext: string;
+  totalBytes: number;
+  totalCount: number;
+}
+
+/** Breakdown of space by file type, size-sorted and capped like tree reads. */
+export interface TypeRollupResponse {
+  /** The generation this rollup was read from (pins with the seeded tree generation). */
+  generation: number;
+  root: string;
+  /** The subtree this breakdown covers ("" = the whole root); echoes the request. */
+  path: string;
+  /** Extensions, largest first, capped at the request `limit`. */
+  types: TypeRollupEntry[];
+  /** Present when capped: the extensions (and their bytes) past the cap. */
+  omittedTail?: OmittedTail;
+}
+
 /** Summary of a completed scan (what the `done` event carries — no tree). */
 export interface ScanSummary {
   generation: number;

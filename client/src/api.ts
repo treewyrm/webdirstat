@@ -7,6 +7,7 @@ import type {
   TreeBatchRequest,
   TreeBatchResponse,
   TreeSlice,
+  TypeRollupResponse,
 } from "@webdirstat/shared";
 
 export async function fetchRoots(): Promise<ScanRoot[]> {
@@ -96,6 +97,21 @@ export async function fetchRootStatus(rootId: string): Promise<RootStatus> {
   const res = await fetch(`/api/roots/${encodeURIComponent(rootId)}/status`);
   if (!res.ok) throw new Error(`Failed to load status: ${res.status}`);
   return res.json() as Promise<RootStatus>;
+}
+
+/**
+ * Fetches the space-by-file-type breakdown, pinned to the seeded generation. `path`
+ * scopes it to a subtree ("" = the whole root, answered from the precomputed table).
+ */
+export async function fetchTypes(rootId: string, path = "", generation?: number): Promise<TypeRollupResponse> {
+  const params = new URLSearchParams();
+  if (path) params.set("path", path);
+  if (generation != null) params.set("generation", String(generation));
+  const query = params.toString();
+  const res = await fetch(`/api/roots/${encodeURIComponent(rootId)}/types${query ? `?${query}` : ""}`);
+  if (res.status === 404) throw new NotScannedError();
+  if (!res.ok) throw new Error(`Failed to load types: ${res.status}`);
+  return res.json() as Promise<TypeRollupResponse>;
 }
 
 export async function fetchSchedule(rootId: string): Promise<RootSchedule> {

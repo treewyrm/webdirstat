@@ -9,6 +9,8 @@ export type {
   TreeBatchNode,
   TreeBatchResolved,
   TreeBatchResponse,
+  TypeRollupEntry,
+  TypeRollupResponse,
   ScanSummary,
   ScanEvent,
   ScanTrigger,

@@ -17,6 +17,7 @@ import ScheduleEditor from "./components/ScheduleEditor.vue";
 import Breadcrumbs from "./components/Breadcrumbs.vue";
 import ScanStatus from "./components/ScanStatus.vue";
 import FileList from "./components/FileList.vue";
+import TypeList from "./components/TypeList.vue";
 
 const roots = ref<ScanRoot[]>([]);
 const selectedRootId = ref<string>("");
@@ -26,6 +27,7 @@ const rootStatus = shallowRef<RootStatus | null>(null);
 const scanError = ref<string | null>(null);
 const notScanned = ref(false);
 const showSchedule = ref(false);
+const showTypes = ref(false);
 
 /** The root slice passed to the map; its generation pins every read this session. */
 const seed = shallowRef<TreeSlice | null>(null);
@@ -140,6 +142,7 @@ function flyToChild(child: TreeChild): void {
         <option v-for="root in roots" :key="root.id" :value="root.id">{{ root.label }}</option>
       </select>
       <button :disabled="!selectedRootId" @click="onStartStop">{{ globalScanning ? "Stop" : "Scan" }}</button>
+      <button class="ghost" :class="{ active: showTypes }" @click="showTypes = !showTypes">Types</button>
       <button class="ghost" :class="{ active: showSchedule }" @click="showSchedule = !showSchedule">Schedule</button>
 
       <ScanStatus :scanner="scanner" :roots="roots" :root-status="rootStatus" :error="scanError" />
@@ -150,6 +153,7 @@ function flyToChild(child: TreeChild): void {
     <Breadcrumbs :chain="focusChain" @navigate="(path) => mapRef?.flyToPath(path)" />
 
     <main v-if="seed" class="content">
+      <TypeList v-if="showTypes" :root-id="selectedRootId" :generation="generation" :path="focusPath" />
       <FileList :children="focusChildren" :total-size="focusSize" @select="flyToChild" />
 
       <section class="treemap-pane">

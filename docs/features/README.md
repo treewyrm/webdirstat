@@ -16,7 +16,10 @@ Filed:
   [issue 0002](../issues/0002-background-scanning-service.md) (its milestone 4).
 - [0003 — History & diff](0003-history-and-diff.md) — *Proposed.*
 - [0004 — Search & filter](0004-search-and-filter.md) — *Proposed.*
-- [0005 — File-type rollup](0005-file-type-rollup.md) — *Proposed.*
+- [0005 — File-type rollup](0005-file-type-rollup.md) — *Done.* `GET /api/roots/:id/types`
+  over the walk-filled `type_rollup` table (whole-root) or an on-demand subtree
+  aggregate (`?path=`) + a "By type" panel that tracks the focused folder with a
+  Raw/Grouped family toggle; user-editable families deferred to 0007.
 - [0006 — Export paths](0006-export-paths.md) — *Proposed.*
 - [0007 — Display settings pane](0007-display-settings-pane.md) — *Proposed.*
   Client-local (`localStorage`) display preferences in a schedule-editor-style pane.

@@ -33,6 +33,18 @@ function extensionOf(name: string): string {
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
 }
 
+/** The file color for a bare (lowercased, dot-less) extension; "" is the extension-less tone. */
+export function colorForExt(ext: string): string {
+  if (!ext) return "#8a8f99";
+  return PALETTE[hashString(ext) % PALETTE.length]!;
+}
+
+/** A stable palette swatch for an arbitrary label — used for grouped type families,
+ * which span several extensions and so have no single tile color to match. */
+export function colorForFamily(label: string): string {
+  return PALETTE[hashString(label) % PALETTE.length]!;
+}
+
 /** Deterministic tile color: directories/symlinks/other get fixed neutral tones, files are colored by extension. */
 export function colorFor(node: Colorable): string {
   if (node.error) return "#5b1f22";
@@ -40,7 +52,5 @@ export function colorFor(node: Colorable): string {
   if (node.kind === "symlink") return "#6b6f7a";
   if (node.kind === "other") return "#4a4e58";
 
-  const ext = extensionOf(node.name);
-  if (!ext) return "#8a8f99";
-  return PALETTE[hashString(ext) % PALETTE.length]!;
+  return colorForExt(extensionOf(node.name));
 }
