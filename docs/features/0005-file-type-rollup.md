@@ -1,8 +1,9 @@
 # 0005 — File-type (extension) rollup
 
 Status: **Done** — raw rollup + "By type" panel shipped, both whole-root and
-subtree-scoped (the panel tracks the focused folder). Family grouping remains a
-follow-up (see Open questions).
+subtree-scoped (the panel tracks the focused folder), with a Raw/Grouped toggle
+that folds extensions into families. Follow-up: make the family map
+user-customizable and persisted (folds into feature 0007).
 
 Prerequisite: [issue 0002 — Background scanning service](../issues/0002-background-scanning-service.md).
 Shares the scan-time **`ext`** column with
@@ -55,9 +56,14 @@ Capped + generation-pinned like the tree reads.
 
 ## Open questions
 
-- **Bucketing.** Group known families (`.mov/.mp4/.mkv` → "Video",
-  `.jpg/.png/...` → "Images") vs. raw extensions? Probably show raw with an
-  optional grouped view; grouping is a client-side map over the rollup.
+- **Bucketing.** ~~Group known families vs. raw extensions?~~ **Resolved:** raw by
+  default with an optional Grouped toggle; grouping is a client-side fold over the
+  rollup ([families.ts](../../client/src/utils/families.ts) → `groupByFamily`). Known
+  extensions collapse into families (`.mov/.mp4/.mkv` → "Video"), unknown ones pass
+  through as their own row so nothing is hidden. **Remaining:** the family map is a
+  hardcoded default today; making it user-editable and persisted (localStorage) is a
+  follow-up that folds into the display-settings pane (feature 0007) — see the TODO
+  in `families.ts`.
 - **Extension-less / special nodes.** Directories, symlinks, dotfiles with no
   extension, `.tar.gz` double extensions — define the split rule once (shared with
   0004 so search and rollup agree).
@@ -86,4 +92,7 @@ client shows a toggled "By type" panel
 ([TypeList.vue](../../client/src/components/TypeList.vue)) that tracks the focused
 folder (debounced) and whose swatches reuse the treemap's extension coloring
 (`colorForExt`, [color.ts](../../client/src/utils/color.ts)). Extension-less files
-land in the `""` bucket, shown as "(no extension)". Family grouping is deferred.
+land in the `""` bucket, shown as "(no extension)". A Raw/Grouped toggle folds
+extensions into families client-side
+([families.ts](../../client/src/utils/families.ts)); the family map is a hardcoded
+default, with making it user-editable + persisted deferred to feature 0007.

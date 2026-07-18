@@ -39,6 +39,12 @@ export function colorForExt(ext: string): string {
   return PALETTE[hashString(ext) % PALETTE.length]!;
 }
 
+/** A stable palette swatch for an arbitrary label — used for grouped type families,
+ * which span several extensions and so have no single tile color to match. */
+export function colorForFamily(label: string): string {
+  return PALETTE[hashString(label) % PALETTE.length]!;
+}
+
 /** Deterministic tile color: directories/symlinks/other get fixed neutral tones, files are colored by extension. */
 export function colorFor(node: Colorable): string {
   if (node.error) return "#5b1f22";
