@@ -31,6 +31,28 @@ There is **no test suite and no working linter**. `pnpm lint` delegates to per-p
 scripts that don't exist (no ESLint config anywhere), so it fails — use `pnpm typecheck` for
 verification. Debugging both dev servers together is set up in [.claude/launch.json](.claude/launch.json).
 
+### Screenshotting the running app (headless)
+
+To verify UI changes, build both, run the server with `CLIENT_DIST` set so one process serves API +
+SPA, scan a small fixture dir (`POST /api/scan {"root":...,"mode":"preempt"}`), then screenshot.
+
+**Gotcha: `--virtual-time-budget` never settles** — the client holds `GET /api/status` (SSE) open
+forever, so that flag (and any "wait for network idle") hangs until timeout and yields no image.
+**Drive Chrome over CDP and control capture timing yourself** instead:
+
+1. `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu
+   --remote-debugging-port=9222 --user-data-dir=<tmp> about:blank &`
+2. Connect to `webSocketDebuggerUrl` from `http://localhost:9222/json/version` (Node 24 has global
+   `WebSocket`/`fetch`). `Target.createTarget` **must pass `newWindow:true`** to accept `width`/
+   `height` (else `-32602 "Target position can only be set for new windows"`).
+3. `Target.attachToTarget {flatten:true}` → `Page.enable` → `Emulation.setDeviceMetricsOverride`
+   (e.g. `deviceScaleFactor:2` for retina) → `Page.navigate` → **fixed `setTimeout` wait** (not a
+   load event) → `Page.captureScreenshot`.
+
+The list pane (breadcrumbs + files) is camera-derived, so on load it shows the **root's** children;
+to screenshot deep rows without driving zoom, point `ROOTS` at a fixture whose top level already has
+the mix you want to see.
+
 ## Architecture
 
 A WinDirStat-style disk-usage visualizer, shipped as one Docker container. pnpm monorepo with
