@@ -1,5 +1,5 @@
 import { realpath } from "node:fs/promises";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import type { RootSchedule, ScanRoot } from "@webdirstat/shared";
 import { logger } from "./logger.ts";
 import { parseDuration, parseWindows } from "./scan/schedule.ts";
@@ -26,8 +26,15 @@ function slugify(label: string): string {
 }
 
 /**
- * Parses the `ROOTS` env var: `Label1=/path/one,Label2=/path/two`.
+ * Parses the `ROOTS` env var. Two accepted forms per comma-separated entry:
+ *   - labeled:   `Label=/path` — everything before the first `=` is the label.
+ *   - unlabeled: `/path` — the display label is derived from the path's basename.
  * Falls back to a single root pointing at `/data`, matching a `-v host:/data` mount.
+ *
+ * `=` is disambiguating but not perfectly: `=` (and `,`) are legal in filesystem
+ * paths, so an unlabeled path containing `=`, or any path containing `,`, must be
+ * given in the explicit `Label=/path` form. The label is derived from the basename
+ * (never the raw path) so an unlabeled entry can't leak the host path to the client.
  */
 async function parseRoots(raw: string | undefined): Promise<ResolvedRoot[]> {
   const entries = (raw ?? "Data=/data")
@@ -40,15 +47,16 @@ async function parseRoots(raw: string | undefined): Promise<ResolvedRoot[]> {
 
   for (const entry of entries) {
     const separatorIndex = entry.indexOf("=");
-    const label = separatorIndex === -1 ? entry : entry.slice(0, separatorIndex);
-    const path = separatorIndex === -1 ? entry : entry.slice(separatorIndex + 1);
-    if (!path.trim()) continue;
+    const path = (separatorIndex === -1 ? entry : entry.slice(separatorIndex + 1)).trim();
+    if (!path) continue;
+    // Unlabeled: label from basename, not the full path (labels go to the client).
+    const label = separatorIndex === -1 ? basename(path) : entry.slice(0, separatorIndex).trim();
 
     let id = slugify(label);
     while (seenIds.has(id)) id = `${id}-2`;
     seenIds.add(id);
 
-    const absolutePath = resolve(path.trim());
+    const absolutePath = resolve(path);
     let canonicalPath = absolutePath;
     try {
       canonicalPath = await realpath(absolutePath);
@@ -56,7 +64,7 @@ async function parseRoots(raw: string | undefined): Promise<ResolvedRoot[]> {
       logger.warn(`root "${label}" (${absolutePath}) does not exist yet`);
     }
 
-    roots.push({ id, label: label.trim() || id, absolutePath, canonicalPath });
+    roots.push({ id, label: label || id, absolutePath, canonicalPath });
   }
 
   return roots;
