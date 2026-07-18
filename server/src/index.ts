@@ -37,8 +37,12 @@ scheduler.start();
 const app = new H3();
 
 app.use(
-  onError((_event, error) => {
-    console.error("[webdirstat]", error);
+  // h3's onError hook is (error, event) — logging the event instead would walk into
+  // event.req, whose lazy Request rebuild throws on an already-consumed POST body.
+  // Only surface genuinely unexpected failures; expected 4xx (e.g. the 410 that drives
+  // the client's generation re-seed during a rescan) are normal protocol flow, not noise.
+  onError((error) => {
+    if (error.unhandled || error.status >= 500) console.error("[webdirstat]", error);
   }),
 );
 
