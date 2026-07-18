@@ -57,7 +57,7 @@ the read-only share). See [docker-compose.yml](docker-compose.yml) for a multi-s
 
 | Var | Default | Purpose |
 |---|---|---|
-| `ROOTS` | `Data=/data` | Comma-separated `Label=/host/path` pairs; each becomes a selectable root. |
+| `ROOTS` | `Data=/data` | Comma-separated roots. Each is either `Label=/host/path` or a bare `/host/path` (label derived from the basename). Since `=` and `,` are legal in paths, a path with `,` — or an unlabeled path with `=` — must use the `Label=/path` form. |
 | `DB_PATH` | `./data/webdirstat.db` (`/db/webdirstat.db` in Docker) | SQLite store file. Must be on writable storage. |
 | `PORT` / `HOST` | `3000` / `0.0.0.0` (`8080` in Docker) | Listen address. |
 | `CLIENT_DIST` | unset in dev | Directory of the built SPA; when set the server also serves the client. |
