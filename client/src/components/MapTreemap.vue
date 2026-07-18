@@ -632,7 +632,53 @@ function flyToPath(path: string): void {
   flyTo(node);
 }
 
-defineExpose({ flyToPath });
+/**
+ * Walk `dirSegs` from the root through the laid-out tree, stopping at the first
+ * directory whose interior isn't loaded yet (`needLoad`), a missing segment, or the
+ * target. Unlike a plain lookup this reports *why* it stopped so {@link revealPath}
+ * can fetch that one level and resume.
+ */
+function descendLoaded(dirSegs: string[]): { node: WorldNode; needLoad: boolean } {
+  let node: WorldNode = worldRoot!;
+  for (const seg of dirSegs) {
+    if (node.children == null) return { node, needLoad: node.kind === "directory" && node.childCount > 0 };
+    const child = node.children.find((c) => c.kind === "directory" && c.name === seg);
+    if (!child) return { node, needLoad: false }; // segment absent (folded/omitted/gone) — stop here
+    node = child;
+  }
+  return { node, needLoad: false }; // reached the target directory
+}
+
+/**
+ * Reveal a deep search result (feature 0004): seed the spine down to the folder that
+ * contains `filePath`, one batch per unloaded level, then fly there. `flyToPath`
+ * alone can't do this — it stops at the deepest *already-laid-out* ancestor, and a
+ * search hit is usually far below what the camera has fetched. The final fly's
+ * `prefetchSpine` loads the containing folder's children, so the file tile lays out
+ * and App's id-highlight lands on it. The caller sets that highlight.
+ */
+async function revealPath(filePath: string): Promise<void> {
+  if (!worldRoot) return;
+  const dirSegs = filePath.split("/").filter(Boolean).slice(0, -1); // drop the file itself
+  for (let guard = 0; guard <= dirSegs.length + 1; guard++) {
+    const { node, needLoad } = descendLoaded(dirSegs);
+    if (!needLoad) {
+      flyTo(node);
+      return;
+    }
+    try {
+      const response = await fetchTreeBatch(props.rootId, props.seed.generation, [
+        { parentId: node.id, depth: 1, limit: BATCH_LIMIT, minSize: minSizeFor(node.id) },
+      ]);
+      applyBatch(response.nodes);
+    } catch {
+      flyTo(node); // best-effort: land as deep as we got
+      return;
+    }
+  }
+}
+
+defineExpose({ flyToPath, revealPath });
 
 // --- camera-derived focus (breadcrumbs + list) ---
 

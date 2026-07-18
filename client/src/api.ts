@@ -4,6 +4,8 @@ import type {
   ScannerStatus,
   ScanMode,
   ScanRoot,
+  SearchParams,
+  SearchResponse,
   TreeBatchRequest,
   TreeBatchResponse,
   TreeSlice,
@@ -115,6 +117,31 @@ export async function fetchTypes(rootId: string, path = "", generation?: number)
   if (res.status === 404) throw new NotScannedError();
   if (!res.ok) throw new Error(`Failed to load types: ${res.status}`);
   return res.json() as Promise<TypeRollupResponse>;
+}
+
+/**
+ * Structured file search (feature 0004), generation-pinned and capped. Only the set
+ * predicates are sent; an all-empty query is a valid "biggest files" listing. A 404
+ * (root never scanned) surfaces as {@link NotScannedError} like the tree read.
+ */
+export async function fetchSearch(params: SearchParams): Promise<SearchResponse> {
+  const q = new URLSearchParams({ root: params.root });
+  if (params.scope) q.set("scope", params.scope);
+  if (params.path) q.set("path", params.path);
+  if (params.minSize != null) q.set("minSize", String(params.minSize));
+  if (params.maxSize != null) q.set("maxSize", String(params.maxSize));
+  if (params.ext) q.set("ext", params.ext);
+  if (params.olderThan != null) q.set("olderThan", String(params.olderThan));
+  if (params.newerThan != null) q.set("newerThan", String(params.newerThan));
+  if (params.nameLike) q.set("nameLike", params.nameLike);
+  if (params.sort) q.set("sort", params.sort);
+  if (params.limit != null) q.set("limit", String(params.limit));
+  if (params.generation != null) q.set("generation", String(params.generation));
+
+  const res = await fetch(`/api/search?${q.toString()}`);
+  if (res.status === 404) throw new NotScannedError();
+  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+  return res.json() as Promise<SearchResponse>;
 }
 
 export async function fetchSchedule(rootId: string): Promise<RootSchedule> {

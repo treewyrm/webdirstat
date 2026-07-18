@@ -1,8 +1,11 @@
 # 0004 — Search & filter
 
-Status: **Decided** — schema decide-now half already shipped in 0002's first cut
-(`ext` column, `node_gen_root_mtime`, `node_gen_root_ext`). This note fleshes out
-the remaining additive work into a concrete implementation design. Not yet started.
+Status: **Done** — full structured search shipped end-to-end: fts trigram name
+index + `node_gen_root_size` migration, `GET /api/search` (size/ext/age + name
+substring, whole-root or subtree, capped + generation-pinned), and a client
+filters panel whose results reveal-in-map (spine-seeded fly-to). The schema
+decide-now half had already shipped in 0002's first cut (`ext`,
+`node_gen_root_mtime`, `node_gen_root_ext`).
 
 Prerequisite: [issue 0002 — Background scanning service](../issues/0002-background-scanning-service.md).
 Shares the scan-time **`ext`** column with
@@ -133,7 +136,22 @@ move together.
    and subtree `scope=here` (recursive CTE from a resolved anchor; unresolved /
    non-directory path → empty, never an error). Curl-verified incl. cross-dir
    substring, ANDed name+ext, special-char quoting, and subtree∩name.
-4. Client filters panel + results list + reveal-in-map spine-seed.
+4. **Done.** `SearchPanel.vue` (name / min-size / ext / age filters, scope
+   here|everywhere toggle, sort), self-fetching + debounced like `TypeList`.
+   Results reveal-in-map: `MapTreemap.revealPath()` loads interiors level-by-level
+   down the hit's path (one batch per unloaded level — robust against the batch
+   spine's size-pruning), flies to the containing folder, and App sets the
+   feature-0012 id-highlight on the file. Screenshot-verified: a deep
+   `Movies/2019/…` hit reveals and navigates correctly.
+
+## Known follow-ups (not blocking)
+
+- A hit that is folded (below the global `minSize`) or past a directory's cap has
+  no own tile, so the id-highlight can't land — reveal still flies to the right
+  folder. Fetching the containing folder unfolded (`minSize: 0`) on reveal would
+  close this.
+- Path-sort is intentionally absent (paths aren't stored). A "sort the visible
+  page by path" client-side option could be added if wanted.
 
 ## Open questions (resolved)
 

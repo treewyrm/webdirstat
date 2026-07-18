@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
-import type { RootStatus, ScannerStatus, ScanRoot, TreeChild, TreeSlice } from "@webdirstat/shared";
+import type { RootStatus, ScannerStatus, ScanRoot, SearchResult, TreeChild, TreeSlice } from "@webdirstat/shared";
 import {
   fetchRootStatus,
   fetchRoots,
@@ -19,6 +19,7 @@ import Breadcrumbs from "./components/Breadcrumbs.vue";
 import ScanStatus from "./components/ScanStatus.vue";
 import FileList from "./components/FileList.vue";
 import TypeList from "./components/TypeList.vue";
+import SearchPanel from "./components/SearchPanel.vue";
 
 const roots = ref<ScanRoot[]>([]);
 const selectedRootId = ref<string>("");
@@ -29,6 +30,7 @@ const scanError = ref<string | null>(null);
 const notScanned = ref(false);
 const showSettings = ref(false);
 const showTypes = ref(false);
+const showSearch = ref(false);
 
 const { settings } = useDisplaySettings();
 const formatBytes = useByteFormat();
@@ -152,6 +154,12 @@ function flyToChild(child: TreeChild): void {
   const path = focusPath.value ? `${focusPath.value}/${child.name}` : child.name;
   mapRef.value?.flyToPath(path);
 }
+
+/** A search hit: seed the spine to its folder, fly there, and highlight the file tile. */
+function revealResult(result: SearchResult): void {
+  highlightedId.value = result.id;
+  void mapRef.value?.revealPath(result.path);
+}
 </script>
 
 <template>
@@ -166,6 +174,7 @@ function flyToChild(child: TreeChild): void {
         <option value="type">Color: Type</option>
         <option value="age">Color: Age</option>
       </select>
+      <button class="ghost" :class="{ active: showSearch }" @click="showSearch = !showSearch">🔍 Search</button>
       <button class="ghost" :class="{ active: showTypes }" @click="showTypes = !showTypes">Types</button>
       <button class="ghost" :class="{ active: showSettings }" @click="showSettings = !showSettings">⚙ Settings</button>
 
@@ -183,6 +192,13 @@ function flyToChild(child: TreeChild): void {
     <Breadcrumbs :chain="focusChain" @navigate="(path) => mapRef?.flyToPath(path)" />
 
     <main v-if="seed" class="content">
+      <SearchPanel
+        v-if="showSearch"
+        :root-id="selectedRootId"
+        :generation="generation"
+        :focus-path="focusPath"
+        @reveal="revealResult"
+      />
       <TypeList v-if="showTypes" :root-id="selectedRootId" :generation="generation" :path="focusPath" />
       <FileList
         :children="focusChildren"
