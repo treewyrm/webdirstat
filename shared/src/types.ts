@@ -148,6 +148,64 @@ export interface TypeRollupResponse {
   omittedTail?: OmittedTail;
 }
 
+// --- Search & filter (GET /api/search) — feature 0004 ---
+
+/**
+ * Result ordering. `size`/`mtime` are descending ("largest / most-recent first"),
+ * `name` ascending. Path sort isn't offered: paths aren't stored (they're
+ * reconstructed only for the capped page), so ordering by path would need every
+ * match materialized first.
+ */
+export type SearchSort = "size" | "mtime" | "name";
+
+/**
+ * The structured search query (client → server, sent as URL query params). Every
+ * predicate is optional and ANDed; an empty query is a valid "top files by size"
+ * across the root. `nameLike` (fts substring) and subtree scope arrive in a later
+ * phase — the field is reserved here so the contract doesn't shift under the client.
+ */
+export interface SearchParams {
+  root: string;
+  /** Files at least this many bytes. */
+  minSize?: number;
+  /** Files at most this many bytes. */
+  maxSize?: number;
+  /** Lowercased extension without the dot; matches the stored `ext` exactly. */
+  ext?: string;
+  /** Modified strictly before this epoch-ms ("older than" — archive candidates). */
+  olderThan?: number;
+  /** Modified at or after this epoch-ms ("newer than"). */
+  newerThan?: number;
+  /** Filename substring (fts trigram); reserved — not yet handled server-side. */
+  nameLike?: string;
+  sort?: SearchSort;
+  limit?: number;
+  /** Pin a specific generation; omit for the current live one. */
+  generation?: number;
+}
+
+/** One search hit. Always a file (search targets `kind='file'`). */
+export interface SearchResult {
+  /** Generation-scoped id, valid while `generation` is pinned. */
+  id: number;
+  /** Durable relative path from the root, reconstructed from parent links; feeds fly-to + export. */
+  path: string;
+  name: string;
+  kind: NodeKind;
+  size: number;
+  mtimeMs?: number;
+}
+
+/** Capped, generation-pinned search results (same cap discipline as every other read). */
+export interface SearchResponse {
+  generation: number;
+  root: string;
+  /** Matches, ordered by the requested sort, capped at the request `limit`. */
+  results: SearchResult[];
+  /** How many further matches were past the cap (count only — never serialized). */
+  omittedCount: number;
+}
+
 /** Summary of a completed scan (what the `done` event carries — no tree). */
 export interface ScanSummary {
   generation: number;

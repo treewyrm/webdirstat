@@ -124,11 +124,13 @@ move together.
 
 ## Suggested phasing
 
-1. Migration (`node_gen_root_size` + `node_fts`) + scan-time fts population + prune
-   hook. Verify a rescan populates and a prune cleans up.
-2. `searchNodes()` + `GET /api/search` (whole-root, structured filters, path
-   reconstruction). Testable via curl before any UI.
-3. `nameLike` (fts trigram MATCH) and subtree `scope=here`.
+1. **Done.** Migration (`node_gen_root_size` + `node_fts`) + scan-time fts
+   population + prune hook. Verified a rescan populates and a prune cleans up.
+2. **Done.** `searchNodes()` + `GET /api/search` (whole-root, structured
+   filters: size/ext/age, sort size|mtime|name, path reconstruction, exact
+   `omittedCount`). Curl-verified against a fixture, incl. 410/404 guards.
+3. `nameLike` (fts trigram MATCH) and subtree `scope=here`. The `SearchParams`
+   contract already reserves `nameLike`; add `scope`/`path` alongside it.
 4. Client filters panel + results list + reveal-in-map spine-seed.
 
 ## Open questions (resolved)

@@ -13,6 +13,7 @@ import { registerScanRoutes } from "./routes/scan.ts";
 import { registerStatusRoutes } from "./routes/status.ts";
 import { registerScheduleRoutes } from "./routes/schedule.ts";
 import { registerTypesRoute } from "./routes/types.ts";
+import { registerSearchRoute } from "./routes/search.ts";
 import type { RouteContext } from "./routes/context.ts";
 import { createStaticHandler } from "./static/serve.ts";
 
@@ -52,6 +53,7 @@ registerScanRoutes(ctx);
 registerStatusRoutes(ctx);
 registerScheduleRoutes(ctx);
 registerTypesRoute(ctx);
+registerSearchRoute(ctx);
 
 if (config.clientDist) {
   app.get("/**", createStaticHandler(config.clientDist));
