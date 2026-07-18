@@ -161,11 +161,14 @@ export type SearchSort = "size" | "mtime" | "name";
 /**
  * The structured search query (client → server, sent as URL query params). Every
  * predicate is optional and ANDed; an empty query is a valid "top files by size"
- * across the root. `nameLike` (fts substring) and subtree scope arrive in a later
- * phase — the field is reserved here so the contract doesn't shift under the client.
+ * across the root.
  */
 export interface SearchParams {
   root: string;
+  /** Whole root (default) or the subtree anchored at `path` when `"here"`. */
+  scope?: "root" | "here";
+  /** Subtree anchor (relative path) when `scope="here"`; ignored otherwise. */
+  path?: string;
   /** Files at least this many bytes. */
   minSize?: number;
   /** Files at most this many bytes. */
@@ -176,7 +179,7 @@ export interface SearchParams {
   olderThan?: number;
   /** Modified at or after this epoch-ms ("newer than"). */
   newerThan?: number;
-  /** Filename substring (fts trigram); reserved — not yet handled server-side. */
+  /** Filename substring (fts trigram; ≥3 chars use the index, shorter fall back to LIKE). */
   nameLike?: string;
   sort?: SearchSort;
   limit?: number;

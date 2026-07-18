@@ -129,8 +129,10 @@ move together.
 2. **Done.** `searchNodes()` + `GET /api/search` (whole-root, structured
    filters: size/ext/age, sort size|mtime|name, path reconstruction, exact
    `omittedCount`). Curl-verified against a fixture, incl. 410/404 guards.
-3. `nameLike` (fts trigram MATCH) and subtree `scope=here`. The `SearchParams`
-   contract already reserves `nameLike`; add `scope`/`path` alongside it.
+3. **Done.** `nameLike` (fts trigram MATCH, with a LIKE fallback under 3 chars)
+   and subtree `scope=here` (recursive CTE from a resolved anchor; unresolved /
+   non-directory path → empty, never an error). Curl-verified incl. cross-dir
+   substring, ANDed name+ext, special-char quoting, and subtree∩name.
 4. Client filters panel + results list + reveal-in-map spine-seed.
 
 ## Open questions (resolved)
