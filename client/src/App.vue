@@ -13,6 +13,14 @@ import {
 import type { WorldNode } from "./treemap/layout";
 import { formatAgo, formatBytes, formatCount, formatUntil } from "./utils/format";
 import MapTreemap from "./components/MapTreemap.vue";
+import { File, Folder, Link2 } from "@lucide/vue";
+
+/** Leading list-row glyph for a child's kind (directory / symlink / everything else). */
+function iconForKind(kind: TreeChild["kind"]) {
+  if (kind === "directory") return Folder;
+  if (kind === "symlink") return Link2;
+  return File;
+}
 import ScheduleEditor from "./components/ScheduleEditor.vue";
 
 const roots = ref<ScanRoot[]>([]);
@@ -192,7 +200,8 @@ function percentOfFocus(node: TreeChild): number {
           @click="flyToChild(child)"
         >
           <div class="bar" :style="{ width: percentOfFocus(child) + '%' }"></div>
-          <span class="name">{{ child.name }}</span>
+          <component :is="iconForKind(child.kind)" class="icon" :size="14" aria-hidden="true" />
+          <span class="name" :title="child.name">{{ child.name }}</span>
           <span class="size">{{ formatBytes(child.size) }}</span>
         </div>
         <p v-if="focusChildren.length === 0" class="empty">Empty directory</p>
@@ -313,8 +322,10 @@ function percentOfFocus(node: TreeChild): number {
 
 .list-row {
   position: relative;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.4rem;
+  align-items: center;
   padding: 0.35rem 0.6rem;
   font-size: 0.85rem;
 }
@@ -334,13 +345,38 @@ function percentOfFocus(node: TreeChild): number {
   z-index: 0;
 }
 
+.list-row .icon,
 .list-row .name,
 .list-row .size {
   position: relative;
   z-index: 1;
 }
 
+.list-row .icon {
+  color: var(--muted);
+}
+
+.list-row.dir .icon {
+  color: inherit;
+}
+
+.list-row .name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.list-row .size {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .list-row.error .name {
+  color: var(--danger);
+}
+
+.list-row.error .icon {
   color: var(--danger);
 }
 
