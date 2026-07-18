@@ -1,6 +1,7 @@
 # 0005 — File-type (extension) rollup
 
-Status: **Proposed**
+Status: **Done** — raw per-root rollup + "By type" panel shipped. Grouping into
+families and subtree-scoped rollups remain follow-ups (see Open questions).
 
 Prerequisite: [issue 0002 — Background scanning service](../issues/0002-background-scanning-service.md).
 Shares the scan-time **`ext`** column with
@@ -71,5 +72,13 @@ Grouping into families and subtree-scoped rollups are follow-ups.
 
 ## Decision
 
-Not yet decided — pending discussion. (Whether the walk fills `type_rollup` should
-be settled before 0002's schema is frozen.)
+Adopted the recommendation. The walk fills `type_rollup` in its single pass
+([persist.ts](../../server/src/scan/persist.ts)); reads go through
+`GET /api/roots/:id/types` ([types.ts](../../server/src/routes/types.ts) →
+`typeRollupOf` in [nodes.ts](../../server/src/store/nodes.ts)), generation-pinned and
+capped like the tree reads. The client shows a toggled "By type" panel
+([TypeList.vue](../../client/src/components/TypeList.vue)) whose swatches reuse the
+treemap's extension coloring (`colorForExt`,
+[color.ts](../../client/src/utils/color.ts)). Extension-less files land in the `""`
+bucket, shown as "(no extension)". Family grouping and subtree-scoped rollups are
+deferred.

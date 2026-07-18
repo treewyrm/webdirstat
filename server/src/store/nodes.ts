@@ -1,5 +1,5 @@
 import type { StatementSync } from "node:sqlite";
-import type { NodeKind, TreeChild } from "@webdirstat/shared";
+import type { NodeKind, TreeChild, TypeRollupEntry } from "@webdirstat/shared";
 import type { Store } from "./db.ts";
 
 /** A raw node row as stored. */
@@ -113,6 +113,37 @@ export function writeScanSummary(
       "INSERT INTO scan_summary (generation, root_id, ended_ms, total_bytes, total_count, duration_ms) VALUES (?, ?, ?, ?, ?, ?)",
     )
     .run(summary.generation, summary.rootId, summary.endedMs, summary.totalBytes, summary.totalCount, summary.durationMs);
+}
+
+export interface TypeRollup {
+  types: TypeRollupEntry[];
+  omittedTail?: { count: number; bytes: number };
+}
+
+/**
+ * The per-extension rollup for a generation, largest first, capped at `limit`, with
+ * the omitted tail (count of extensions past the cap + their bytes) summed. Read
+ * straight from the tiny `type_rollup` table the walk filled — no re-aggregation.
+ */
+export function typeRollupOf(store: Store, rootId: string, generation: number, limit: number): TypeRollup {
+  const rows = store.db
+    .prepare(
+      `SELECT ext, total_bytes, total_count
+       FROM type_rollup WHERE generation = ? AND root_id = ? ORDER BY total_bytes DESC, ext ASC LIMIT ?`,
+    )
+    .all(generation, rootId, limit) as Array<{ ext: string; total_bytes: number; total_count: number }>;
+
+  const agg = store.db
+    .prepare("SELECT COUNT(*) AS c, COALESCE(SUM(total_bytes), 0) AS b FROM type_rollup WHERE generation = ? AND root_id = ?")
+    .get(generation, rootId) as { c: number; b: number };
+
+  const types: TypeRollupEntry[] = rows.map((r) => ({ ext: r.ext, totalBytes: r.total_bytes, totalCount: r.total_count }));
+
+  const shownBytes = types.reduce((sum, t) => sum + t.totalBytes, 0);
+  const omittedCount = agg.c - types.length;
+  const result: TypeRollup = { types };
+  if (omittedCount > 0) result.omittedTail = { count: omittedCount, bytes: agg.b - shownBytes };
+  return result;
 }
 
 /** A node by id, scoped to a (root, generation) so a stale/foreign id resolves to nothing. */
