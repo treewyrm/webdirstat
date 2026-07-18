@@ -11,9 +11,9 @@ Filed:
 
 - [0001 — Password protection](0001-password-protection.md) — *Proposed.*
   Independent of the scaling rework below.
-- [0002 — Pan/zoom treemap](0002-pan-zoom-treemap.md) — *Decided.* Map-style
+- [0002 — Pan/zoom treemap](0002-pan-zoom-treemap.md) — *Done.* Map-style
   navigation; built on the slice store from
-  [issue 0002](../issues/0002-background-scanning-service.md).
+  [issue 0002](../issues/0002-background-scanning-service.md) (its milestone 4).
 - [0003 — History & diff](0003-history-and-diff.md) — *Proposed.*
 - [0004 — Search & filter](0004-search-and-filter.md) — *Proposed.*
 - [0005 — File-type rollup](0005-file-type-rollup.md) — *Proposed.*
@@ -22,3 +22,7 @@ Filed:
   Client-local (`localStorage`) display preferences in a schedule-editor-style pane.
 - [0008 — Treemap interaction refinements](0008-treemap-interaction-refinements.md) —
   *Proposed.* Full-path hover + deliberate descend-into-folder; from first testing.
+- [0009 — File-list pane refinements](0009-file-list-pane-refinements.md) — *Done.*
+  Kind icons (first Lucide dependency) + name truncation in the list pane.
+- [0010 — Shaded (cushion) treemap tiles](0010-shaded-treemap-tiles.md) —
+  *Proposed.* Cushion shading for depth cues on the treemap.
