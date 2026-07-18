@@ -1,6 +1,6 @@
 # 0011 — Color tiles by age (mtime)
 
-Status: **Proposed**
+Status: **Done**
 
 A display option to color treemap tiles by **modification time** instead of by file
 type — older files render darker/duller, newer ones brighter — so a viewer can spot
@@ -105,4 +105,37 @@ consider directory aggregates as follow-ups.
 
 ## Decision
 
-Not yet decided — pending discussion.
+Shipped the recommended first cut. Details of what landed:
+
+- **`color.ts`** — `Colorable` gains `mtimeMs?`; a `ColorMode` (`"type" | "age"`)
+  and `AgeBounds` type. `colorByAge(mtimeMs, bounds, now?)` log-scales age (now −
+  mtime) onto a perceptually-uniform, colorblind-safe **viridis** ramp
+  (`AGE_RAMP` = `#440154 → #21918c → #fde725`, dark/old → bright/new). `fillFor(node,
+  mode, bounds)` dispatches: age-colors plain, non-errored **files** only;
+  directories/symlinks/other/tail and errored files keep their `colorFor` neutral
+  tones. Missing mtime falls back to a flat neutral.
+- **Bounds** — client-tracked running **[oldest, newest]** mtime, widened as tiles
+  load (`noteAgeBounds` in `MapTreemap.vue`, reset on reseed). The map emits an
+  `@agebounds` event so `App.vue` can draw the legend; colors settle as bounds do
+  (the accepted first-cut tradeoff — see the summary-min/max follow-up below).
+- **`WorldNode`** carries `mtimeMs` (threaded through `layout.ts`); it already
+  shipped on `TreeChild`, so **no protocol/server change**.
+- **Setting** — `colorMode` added to `useDisplaySettings` (default `"type"`, no
+  version bump — merges into existing stored prefs). A **Tile color** select in
+  `DisplaySettings.vue`, plus a **duplicated compact "Color: Type / Age" select in
+  the app header** (`App.vue` toolbar) for quick access, both bound to the same
+  reactive setting.
+- **Legend** — a small gradient bar (older ← → newer with the actual date bounds),
+  shown in the treemap pane only while Age mode is active and bounds exist.
+
+Verified end-to-end against a fixture with a 2017–2026 mtime spread: old files
+render deep purple, newest bright yellow, directories stay neutral, and the header
+select + Display-pane select stay in sync.
+
+### Follow-ups (not done)
+
+- Promote bounds to a **summary-level min/max** in `scan_summary` so colors are
+  stable from first paint rather than shifting as tiles load.
+- **Directory aggregates** (e.g. newest-descendant mtime) so folders can age-color
+  too; today they stay neutral.
+- ctime/atime modes (would need a scan-time capture change).

@@ -15,6 +15,8 @@ export interface WorldNode {
   childCount: number;
   ext?: string;
   error?: string;
+  /** Modification time (ms), when known — drives the age color mode. */
+  mtimeMs?: number;
   /** Relative path from the root ("" for the root). */
   path: string;
   depth: number;
@@ -106,6 +108,7 @@ export function layoutInto(node: WorldNode, rows: TreeChild[], omittedTail: Omit
         childCount: c.childCount,
         ...(c.ext != null ? { ext: c.ext } : {}),
         ...(c.error != null ? { error: c.error } : {}),
+        ...(c.mtimeMs != null ? { mtimeMs: c.mtimeMs } : {}),
         path: node.path ? `${node.path}/${c.name}` : c.name,
         depth: node.depth + 1,
         ...rect,

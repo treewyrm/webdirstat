@@ -1,4 +1,5 @@
 import { reactive, watch } from "vue";
+import type { ColorMode } from "../utils/color";
 import { formatBytes, type SizeUnitBase } from "../utils/format";
 
 /**
@@ -16,13 +17,15 @@ export interface DisplaySettings {
   sizeUnits: SizeUnitBase;
   /** Cushion (shaded) tile rendering vs. the flat fill (feature 0010). */
   shaded: boolean;
+  /** Tile base color: by extension type vs. by modification age (feature 0011). */
+  colorMode: ColorMode;
 }
 
 const KEY = "wds.display";
 const VERSION = 1;
 
 function defaults(): DisplaySettings {
-  return { version: VERSION, hoverFullPath: false, sizeUnits: "binary", shaded: false };
+  return { version: VERSION, hoverFullPath: false, sizeUnits: "binary", shaded: false, colorMode: "type" };
 }
 
 function load(): DisplaySettings {

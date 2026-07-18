@@ -11,6 +11,7 @@ import {
   subscribeStatus,
 } from "./api";
 import type { WorldNode } from "./treemap/layout";
+import { AGE_RAMP, type AgeBounds } from "./utils/color";
 import { useByteFormat, useDisplaySettings } from "./composables/useDisplaySettings";
 import MapTreemap from "./components/MapTreemap.vue";
 import SettingsModal from "./components/SettingsModal.vue";
@@ -41,6 +42,13 @@ const focusChain = shallowRef<Array<{ id: number; name: string; path: string }>>
 const focusChildren = shallowRef<TreeChild[]>([]);
 const focusSize = ref(0);
 const hoveredNode = shallowRef<WorldNode | null>(null);
+
+/** [oldest, newest] mtime the map has seen, for the age-mode gradient legend. */
+const ageBounds = shallowRef<AgeBounds | null>(null);
+const ageGradient = `linear-gradient(to right, ${AGE_RAMP.join(", ")})`;
+function formatDate(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
 
 const mapRef = ref<InstanceType<typeof MapTreemap> | null>(null);
 
@@ -145,6 +153,10 @@ function flyToChild(child: TreeChild): void {
         <option v-for="root in roots" :key="root.id" :value="root.id">{{ root.label }}</option>
       </select>
       <button :disabled="!selectedRootId" @click="onStartStop">{{ globalScanning ? "Stop" : "Scan" }}</button>
+      <select v-model="settings.colorMode" class="color-mode" title="Tile color mode">
+        <option value="type">Color: Type</option>
+        <option value="age">Color: Age</option>
+      </select>
       <button class="ghost" :class="{ active: showTypes }" @click="showTypes = !showTypes">Types</button>
       <button class="ghost" :class="{ active: showSettings }" @click="showSettings = !showSettings">⚙ Settings</button>
 
@@ -173,7 +185,14 @@ function flyToChild(child: TreeChild): void {
           @focus="onFocus"
           @hover="(node) => (hoveredNode = node)"
           @stale="loadRoot"
+          @agebounds="(b) => (ageBounds = b)"
         />
+        <div v-if="settings.colorMode === 'age' && ageBounds" class="age-legend">
+          <span>{{ formatDate(ageBounds.min) }}</span>
+          <span class="ramp" :style="{ background: ageGradient }"></span>
+          <span>{{ formatDate(ageBounds.max) }}</span>
+          <em>older → newer</em>
+        </div>
         <div v-if="hoveredNode" class="tooltip">
           {{ settings.hoverFullPath ? hoveredNode.path || hoveredNode.name : hoveredNode.name }} — {{ formatBytes(hoveredNode.size) }}
           <template v-if="hoveredNode.error">({{ hoveredNode.error }})</template>
@@ -219,6 +238,36 @@ function flyToChild(child: TreeChild): void {
 .ghost.active {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+.color-mode {
+  font-size: 0.85rem;
+}
+
+.age-legend {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-fg);
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  pointer-events: none;
+}
+
+.age-legend .ramp {
+  width: 90px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.age-legend em {
+  font-style: normal;
+  opacity: 0.7;
 }
 
 .content {

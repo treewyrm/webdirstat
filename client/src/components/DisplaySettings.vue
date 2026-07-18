@@ -18,6 +18,14 @@ const { settings, reset } = useDisplaySettings();
     </label>
 
     <label class="row">
+      <span>Tile color</span>
+      <select v-model="settings.colorMode">
+        <option value="type">By type — extension</option>
+        <option value="age">By age — modification time</option>
+      </select>
+    </label>
+
+    <label class="row">
       <span>Size units</span>
       <select v-model="settings.sizeUnits">
         <option value="binary">Binary — KiB, MiB, GiB</option>

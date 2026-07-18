@@ -4,7 +4,7 @@ import { select } from "d3-selection";
 import { zoom, zoomIdentity, type D3ZoomEvent, type ZoomBehavior, type ZoomTransform } from "d3-zoom";
 import type { TreeChild, TreeSlice } from "@webdirstat/shared";
 import { fetchTreeBatch } from "../api";
-import { colorFor } from "../utils/color";
+import { fillFor, type AgeBounds } from "../utils/color";
 import { useDisplaySettings } from "../composables/useDisplaySettings";
 import { indexById, layoutInto, makeRoot, type WorldNode } from "../treemap/layout";
 
@@ -15,6 +15,7 @@ const emit = defineEmits<{
   focus: [{ chain: Array<{ id: number; name: string; path: string }>; children: TreeChild[]; size: number }];
   hover: [WorldNode | null];
   stale: [];
+  agebounds: [AgeBounds | null];
 }>();
 
 // LOD + interaction tuning.
@@ -40,6 +41,12 @@ let cw = 0;
 let ch = 0;
 let dpr = 1;
 let frame = 0;
+
+// Running [oldest, newest] mtime across every tile the client has laid out, which
+// normalises the age color ramp (feature 0011). Widens as more tiles load; the map
+// emits the bounds so App can draw the gradient legend.
+let ageMin = Infinity;
+let ageMax = -Infinity;
 
 const pending = new Set<number>();
 let fetchController: AbortController | null = null;
@@ -77,6 +84,34 @@ watch(() => props.seed, reseed);
 // Flat/Shaded is a pure rendering-layer change — just repaint, no refetch/relayout.
 watch(() => settings.shaded, scheduleDraw);
 
+// Type/Age color mode is also a pure repaint; re-emit bounds so the legend is ready.
+watch(
+  () => settings.colorMode,
+  () => {
+    emit("agebounds", ageBounds());
+    scheduleDraw();
+  },
+);
+
+/** The current age bounds, or null until at least one tile with an mtime has loaded. */
+function ageBounds(): AgeBounds | null {
+  return ageMax >= ageMin ? { min: ageMin, max: ageMax } : null;
+}
+
+/** Widen the running mtime bounds over a freshly laid-out level; emit if they moved. */
+function noteAgeBounds(rows: TreeChild[]): void {
+  let changed = false;
+  for (const row of rows) {
+    if (row.mtimeMs == null) continue;
+    if (row.mtimeMs < ageMin) (ageMin = row.mtimeMs), (changed = true);
+    if (row.mtimeMs > ageMax) (ageMax = row.mtimeMs), (changed = true);
+  }
+  if (changed) {
+    emit("agebounds", ageBounds());
+    if (settings.colorMode === "age") scheduleDraw();
+  }
+}
+
 function measure(): void {
   const wrapper = wrapperRef.value!;
   const canvas = canvasRef.value!;
@@ -92,9 +127,14 @@ function measure(): void {
 function reseed(): void {
   fetchController?.abort();
   pending.clear();
+  // New tree: forget the old mtime span before re-accumulating from this seed.
+  ageMin = Infinity;
+  ageMax = -Infinity;
+  emit("agebounds", null);
   if (!wrapperRef.value || cw === 0) measure();
   worldRoot = makeRoot(props.seed.node, { x0: 0, y0: 0, x1: cw || 1, y1: ch || 1 });
   layoutInto(worldRoot, props.seed.children, props.seed.omittedTail);
+  noteAgeBounds(props.seed.children);
   index = indexById(worldRoot);
   // Reset the camera to identity.
   transform = zoomIdentity;
@@ -182,7 +222,7 @@ function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, w: number
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     ctx.setLineDash([]);
   } else {
-    ctx.fillStyle = colorFor(node);
+    ctx.fillStyle = fillFor(node, settings.colorMode, ageBounds());
     ctx.fillRect(x, y, w, h);
     // Cushion look: overlay a cached, color-independent light/shadow sprite (feature
     // 0010). One drawImage per tile — cheaper than a per-tile gradient, and the base
@@ -386,6 +426,7 @@ function applyBatch(nodes: Record<string, { children: TreeChild[]; childCount: n
       const node = index.get(Number(idStr));
       if (node && node.children === null) {
         layoutInto(node, entry.children, entry.omittedTail);
+        noteAgeBounds(entry.children);
         changed = true;
       }
     }
