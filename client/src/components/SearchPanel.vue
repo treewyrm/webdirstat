@@ -84,10 +84,10 @@ async function load(): Promise<void> {
   }
 }
 
-/** Directory portion of a result path, shown muted before the file name. */
+/** Directory portion of a result path (no trailing slash), shown muted on the second row. */
 function dirOf(path: string): string {
   const slash = path.lastIndexOf("/");
-  return slash > 0 ? path.slice(0, slash + 1) : "";
+  return slash > 0 ? path.slice(0, slash) : "";
 }
 </script>
 
@@ -140,8 +140,11 @@ function dirOf(path: string): string {
         :title="r.path"
         @click="emit('reveal', r)"
       >
-        <span class="name"><span class="dir">{{ dirOf(r.path) }}</span>{{ r.name }}</span>
-        <span class="size">{{ formatBytes(r.size) }}</span>
+        <span class="line">
+          <span class="name">{{ r.name }}</span>
+          <span class="size">{{ formatBytes(r.size) }}</span>
+        </span>
+        <span v-if="dirOf(r.path)" class="path"><bdi>{{ dirOf(r.path) }}</bdi></span>
       </button>
       <p v-if="data.omittedCount > 0" class="note tail">
         + {{ formatCount(data.omittedCount) }} more — narrow the filters
@@ -152,13 +155,9 @@ function dirOf(path: string): string {
 
 <style scoped>
 .search {
-  width: 280px;
+  /* Sizing, scroll, border, and background are owned by the side shell (App.vue). */
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  border-right: 1px solid var(--border);
-  flex-shrink: 0;
-  background: var(--hover);
 }
 
 .head {
@@ -244,23 +243,28 @@ function dirOf(path: string): string {
 
 .row {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.1rem;
   width: 100%;
   text-align: left;
-  padding: 0.3rem 0.6rem;
+  padding: 0.35rem 0.6rem;
   font: inherit;
   font-size: 0.85rem;
   background: none;
   border: none;
-  border-bottom: 1px solid transparent;
   color: inherit;
   cursor: pointer;
 }
 
 .row:hover {
   background: var(--bg);
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
 .name {
@@ -270,14 +274,27 @@ function dirOf(path: string): string {
   min-width: 0;
 }
 
-.name .dir {
-  color: var(--muted);
-}
-
 .size {
   flex-shrink: 0;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* Directory row: clip from the LEFT so the nearest parent folders stay visible.
+   Container is RTL (so the ellipsis lands on the left), while the <bdi> keeps the
+   path's own characters in correct left-to-right order. */
+.path {
+  direction: rtl;
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.path bdi {
+  direction: ltr;
 }
 
 .note {

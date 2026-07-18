@@ -29,8 +29,10 @@ const rootStatus = shallowRef<RootStatus | null>(null);
 const scanError = ref<string | null>(null);
 const notScanned = ref(false);
 const showSettings = ref(false);
-const showTypes = ref(false);
-const showSearch = ref(false);
+
+/** Which left pane is shown; the three panes are mutually exclusive tabs now. */
+type SideTab = "files" | "types" | "search";
+const activeTab = ref<SideTab>("files");
 
 const { settings } = useDisplaySettings();
 const formatBytes = useByteFormat();
@@ -174,8 +176,6 @@ function revealResult(result: SearchResult): void {
         <option value="type">Color: Type</option>
         <option value="age">Color: Age</option>
       </select>
-      <button class="ghost" :class="{ active: showSearch }" @click="showSearch = !showSearch">🔍 Search</button>
-      <button class="ghost" :class="{ active: showTypes }" @click="showTypes = !showTypes">Types</button>
       <button class="ghost" :class="{ active: showSettings }" @click="showSettings = !showSettings">⚙ Settings</button>
 
       <ScanStatus :scanner="scanner" :roots="roots" :root-status="rootStatus" :error="scanError" />
@@ -192,20 +192,35 @@ function revealResult(result: SearchResult): void {
     <Breadcrumbs :chain="focusChain" @navigate="(path) => mapRef?.flyToPath(path)" />
 
     <main v-if="seed" class="content">
-      <SearchPanel
-        v-if="showSearch"
-        :root-id="selectedRootId"
-        :generation="generation"
-        :focus-path="focusPath"
-        @reveal="revealResult"
-      />
-      <TypeList v-if="showTypes" :root-id="selectedRootId" :generation="generation" :path="focusPath" />
-      <FileList
-        :children="focusChildren"
-        :total-size="focusSize"
-        @select="flyToChild"
-        @hover="(id) => (highlightedId = id)"
-      />
+      <div class="side">
+        <nav class="tabs" role="tablist">
+          <button role="tab" :class="{ active: activeTab === 'files' }" @click="activeTab = 'files'">Files</button>
+          <button role="tab" :class="{ active: activeTab === 'types' }" @click="activeTab = 'types'">Types</button>
+          <button role="tab" :class="{ active: activeTab === 'search' }" @click="activeTab = 'search'">Search</button>
+        </nav>
+        <div class="side-body">
+          <FileList
+            v-if="activeTab === 'files'"
+            :children="focusChildren"
+            :total-size="focusSize"
+            @select="flyToChild"
+            @hover="(id) => (highlightedId = id)"
+          />
+          <TypeList
+            v-else-if="activeTab === 'types'"
+            :root-id="selectedRootId"
+            :generation="generation"
+            :path="focusPath"
+          />
+          <SearchPanel
+            v-else
+            :root-id="selectedRootId"
+            :generation="generation"
+            :focus-path="focusPath"
+            @reveal="revealResult"
+          />
+        </div>
+      </div>
 
       <section class="treemap-pane">
         <MapTreemap
@@ -305,6 +320,51 @@ function revealResult(result: SearchResult): void {
   flex: 1;
   display: flex;
   min-height: 0;
+}
+
+.side {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--hover);
+}
+
+.tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs button {
+  flex: 1;
+  padding: 0.5rem 0.4rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.tabs button:hover {
+  color: inherit;
+}
+
+.tabs button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.side-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .treemap-pane {

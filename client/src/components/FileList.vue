@@ -47,10 +47,7 @@ function percentOfTotal(node: TreeChild): number {
 
 <style scoped>
 .list-pane {
-  width: 280px;
-  overflow-y: auto;
-  border-right: 1px solid var(--border);
-  flex-shrink: 0;
+  /* Sizing, scroll, and border are owned by the shared side shell (App.vue). */
 }
 
 .list-row {
