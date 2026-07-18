@@ -84,27 +84,25 @@ async function save(): Promise<void> {
       <input v-model="schedule.timezone" type="text" placeholder="Europe/Moscow" />
     </label>
 
-    <div class="grid">
-      <label class="row">
-        <span>Concurrency</span>
-        <input v-model.number="schedule.concurrency" type="number" min="1" />
-      </label>
-      <label class="row">
-        <span>Min gap (min)</span>
-        <input v-model.number="minIntervalMinutes" type="number" min="0" />
-      </label>
-      <label class="row">
-        <span>On window end</span>
-        <select v-model="schedule.onWindowEnd">
-          <option value="finish">finish</option>
-          <option value="abort">abort</option>
-        </select>
-      </label>
-      <label class="row">
-        <span>History gens</span>
-        <input v-model.number="schedule.historyGenerations" type="number" min="0" />
-      </label>
-    </div>
+    <label class="row">
+      <span>Concurrency</span>
+      <input v-model.number="schedule.concurrency" type="number" min="1" />
+    </label>
+    <label class="row">
+      <span>Min gap (min)</span>
+      <input v-model.number="minIntervalMinutes" type="number" min="0" />
+    </label>
+    <label class="row">
+      <span>On window end</span>
+      <select v-model="schedule.onWindowEnd">
+        <option value="finish">finish</option>
+        <option value="abort">abort</option>
+      </select>
+    </label>
+    <label class="row">
+      <span>History gens</span>
+      <input v-model.number="schedule.historyGenerations" type="number" min="0" />
+    </label>
 
     <div class="actions">
       <button type="submit" :disabled="saving">{{ saving ? "Saving…" : "Save schedule" }}</button>
@@ -119,10 +117,7 @@ async function save(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border);
   font-size: 0.85rem;
-  background: var(--hover);
 }
 
 .row {
@@ -146,16 +141,6 @@ async function save(): Promise<void> {
   flex: 1;
   min-width: 0;
   padding: 0.25rem 0.4rem;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
-}
-
-.grid .row > span {
-  min-width: 6rem;
 }
 
 .actions {

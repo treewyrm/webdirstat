@@ -4,7 +4,10 @@ import type { TypeRollupResponse } from "@webdirstat/shared";
 import { fetchTypes, NotScannedError } from "../api";
 import { colorForExt, colorForFamily } from "../utils/color";
 import { groupByFamily } from "../utils/families";
-import { formatBytes, formatCount } from "../utils/format";
+import { formatCount } from "../utils/format";
+import { useByteFormat } from "../composables/useDisplaySettings";
+
+const formatBytes = useByteFormat();
 
 /**
  * The "by type" panel (feature 0005): a breakdown of space by file extension,

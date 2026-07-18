@@ -1,11 +1,18 @@
-const UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
+/** Binary (base-1024, KiB/MiB) vs. decimal (base-1000, KB/MB) size units — a display preference. */
+export type SizeUnitBase = "binary" | "decimal";
 
-export function formatBytes(bytes: number): string {
+const SCALES = {
+  binary: { base: 1024, units: ["B", "KiB", "MiB", "GiB", "TiB", "PiB"] },
+  decimal: { base: 1000, units: ["B", "KB", "MB", "GB", "TB", "PB"] },
+} as const;
+
+export function formatBytes(bytes: number, unit: SizeUnitBase = "binary"): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), UNITS.length - 1);
-  const value = bytes / 1024 ** exponent;
+  const { base, units } = SCALES[unit];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(base)), units.length - 1);
+  const value = bytes / base ** exponent;
   const digits = exponent === 0 ? 0 : value >= 10 ? 1 : 2;
-  return `${value.toFixed(digits)} ${UNITS[exponent]}`;
+  return `${value.toFixed(digits)} ${units[exponent]}`;
 }
 
 export function formatCount(count: number): string {

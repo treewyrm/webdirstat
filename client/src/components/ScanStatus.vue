@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { RootStatus, ScannerStatus, ScanRoot } from "@webdirstat/shared";
-import { formatAgo, formatBytes, formatCount, formatUntil } from "../utils/format";
+import { formatAgo, formatCount, formatUntil } from "../utils/format";
+import { useByteFormat } from "../composables/useDisplaySettings";
+
+const formatBytes = useByteFormat();
 
 const props = defineProps<{
   scanner: ScannerStatus;

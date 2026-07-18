@@ -11,9 +11,9 @@ import {
   subscribeStatus,
 } from "./api";
 import type { WorldNode } from "./treemap/layout";
-import { formatBytes } from "./utils/format";
+import { useByteFormat, useDisplaySettings } from "./composables/useDisplaySettings";
 import MapTreemap from "./components/MapTreemap.vue";
-import ScheduleEditor from "./components/ScheduleEditor.vue";
+import SettingsModal from "./components/SettingsModal.vue";
 import Breadcrumbs from "./components/Breadcrumbs.vue";
 import ScanStatus from "./components/ScanStatus.vue";
 import FileList from "./components/FileList.vue";
@@ -26,8 +26,11 @@ const scanner = shallowRef<ScannerStatus>({ state: { phase: "idle" }, queue: [] 
 const rootStatus = shallowRef<RootStatus | null>(null);
 const scanError = ref<string | null>(null);
 const notScanned = ref(false);
-const showSchedule = ref(false);
+const showSettings = ref(false);
 const showTypes = ref(false);
+
+const { settings } = useDisplaySettings();
+const formatBytes = useByteFormat();
 
 /** The root slice passed to the map; its generation pins every read this session. */
 const seed = shallowRef<TreeSlice | null>(null);
@@ -143,12 +146,18 @@ function flyToChild(child: TreeChild): void {
       </select>
       <button :disabled="!selectedRootId" @click="onStartStop">{{ globalScanning ? "Stop" : "Scan" }}</button>
       <button class="ghost" :class="{ active: showTypes }" @click="showTypes = !showTypes">Types</button>
-      <button class="ghost" :class="{ active: showSchedule }" @click="showSchedule = !showSchedule">Schedule</button>
+      <button class="ghost" :class="{ active: showSettings }" @click="showSettings = !showSettings">⚙ Settings</button>
 
       <ScanStatus :scanner="scanner" :roots="roots" :root-status="rootStatus" :error="scanError" />
     </header>
 
-    <ScheduleEditor v-if="showSchedule && selectedRootId" :root-id="selectedRootId" @saved="refreshRootStatus" />
+    <SettingsModal
+      :open="showSettings"
+      :roots="roots"
+      :root-id="selectedRootId"
+      @close="showSettings = false"
+      @schedule-saved="refreshRootStatus"
+    />
 
     <Breadcrumbs :chain="focusChain" @navigate="(path) => mapRef?.flyToPath(path)" />
 
@@ -166,7 +175,7 @@ function flyToChild(child: TreeChild): void {
           @stale="loadRoot"
         />
         <div v-if="hoveredNode" class="tooltip">
-          {{ hoveredNode.name }} — {{ formatBytes(hoveredNode.size) }}
+          {{ settings.hoverFullPath ? hoveredNode.path || hoveredNode.name : hoveredNode.name }} — {{ formatBytes(hoveredNode.size) }}
           <template v-if="hoveredNode.error">({{ hoveredNode.error }})</template>
         </div>
         <div class="hint">scroll to zoom · drag to pan · click a folder to fly in</div>

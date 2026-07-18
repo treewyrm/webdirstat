@@ -1,73 +1,115 @@
-# 0007 — Display settings pane (client-local)
+# 0007 — Unified settings modal
 
-Status: **Proposed**
+Status: **Decided**
+
+Originally scoped as a small client-local *display* pane (a ghost-toggle drawer
+mirroring the schedule editor). Reframed during planning into a single **settings
+modal** that is the one home for everything configurable — client-local display
+prefs *and* the existing per-root server schedule — with a category rail on the
+left and a detail panel on the right.
 
 Raised during first hands-on testing of the pan/zoom treemap
 ([feature 0002](0002-pan-zoom-treemap.md)).
 
 ## Goal
 
-A small **settings pane**, opened the same way the schedule editor is (a ghost
-toggle button in the top bar that reveals a panel — see
-[App.vue](../../client/src/App.vue) `showSchedule` /
-[ScheduleEditor.vue](../../client/src/components/ScheduleEditor.vue)), holding
-**display preferences that live in the browser**, not on the server.
+A modal window (native `<dialog>` + `showModal()` — free backdrop, focus-trap,
+Esc-to-close) opened from a single **⚙ Settings** button in the top bar. Left: a
+category rail. Right: the active category's form. It unites every configurable
+surface under one roof so settings have a predictable home as they accrue,
+instead of sprouting one ghost-toggle drawer per concern.
 
-These are per-viewer, per-device UI choices — they have no place in the server's
-per-root `root_settings` (which is shared scan/schedule config). They belong in
-`localStorage`.
+This **replaces** two things:
 
-## Why client-local
+- The narrow "client-local display pane" this doc originally proposed — that
+  becomes the **Display** category.
+- The standalone **Schedule** ghost button + inline `ScheduleEditor` drawer in
+  [App.vue](../../client/src/App.vue) — that becomes the **Scanning** category.
+  The top bar drops the Schedule toggle; one Settings button takes its place.
 
-- The server store is about *what was scanned*; these are about *how one person
-  likes to look at it*. Two people hitting the same instance can prefer different
-  things without stepping on each other.
+The **Types** toggle stays in the top bar — it is a data *view*, not a setting,
+and is not absorbed.
+
+## Two kinds of config under one modal
+
+The categories differ in scope, and the modal must stay honest about that:
+
+| Category    | Scope             | Storage                          | Per-root? |
+| ----------- | ----------------- | -------------------------------- | --------- |
+| **Display** | global, per-device| `localStorage` (`wds.display`)   | no        |
+| **Scanning**| per-root          | server (`PUT /api/roots/:id/schedule`) | **yes** |
+
+**Root context: a modal-wide root switcher lives in the modal header** (seeded
+from `App`'s `selectedRootId`). Per-root categories (Scanning) configure the
+switcher's current root; global categories (Display) ignore it. The switcher is
+only meaningful for per-root categories, so it is hidden/disabled while a global
+category is active and revealed when a per-root category is selected.
+
+### Why Display is client-local
+
+- The server store is about *what was scanned*; display prefs are about *how one
+  person likes to look at it*. Two viewers of the same instance can differ
+  without stepping on each other.
 - No API, no schema, no migration — a `localStorage` key and a reactive object.
 - Survives reloads; resets cleanly if cleared.
 
-## Candidate settings
+## Categories (v1)
 
-Start small; the pane is the home for display toggles as they accrue:
+- **Display** (client-local, global) — ship two real settings:
+  - **Hover label: full path vs. name only** — the toggle behind
+    [feature 0008](0008-treemap-interaction-refinements.md)'s full-path hover.
+  - **Size units** — binary (MiB/GiB) vs. decimal (MB/GB); today `formatBytes`
+    ([format.ts](../../client/src/utils/format.ts)) picks binary unconditionally.
 
-- **Hover label: full path vs. name only** — the toggle behind
-  [feature 0008](0008-treemap-interaction-refinements.md)'s full-path hover.
-- **Size units** — binary (MiB/GiB) vs. decimal (MB/GB); today `formatBytes`
-  picks one unconditionally.
-- **Color scheme knobs** — e.g. dim files vs. directories, or an intensity for the
-  extension-hash palette ([color.ts](../../client/src/utils/color.ts)).
-- **Label density** — whether to draw tile name labels, and the min tile size at
-  which they appear.
-- **Reduce motion** — skip / shorten the fly-to camera animation (`FLY_MS`).
+  Follow-ups slotted into the same pane later: label density (draw tile names +
+  min tile size), reduce motion (skip/shorten fly-to `FLY_MS`), color-scheme
+  knobs (dim files vs. dirs, extension-hash intensity —
+  [color.ts](../../client/src/utils/color.ts)).
 
-Only the first two are worth shipping in a first cut; the rest are placeholders
-that justify the pane existing.
+- **Scanning** (per-root, server) — the current `ScheduleEditor` form verbatim
+  (automatic scanning, refresh interval, quiet-hours windows, timezone,
+  concurrency, min gap, on-window-end, history generations), now driven by the
+  modal-wide root switcher instead of the app's root select.
+
+- *(placeholder rail slot — e.g. **About/Roots** — a later category; its
+  existence is part of why a rail beats a flat drawer.)*
 
 ## Shape of the change
 
-- A `useDisplaySettings` composable (client) exposing a reactive settings object,
+- **`useDisplaySettings` composable** (client) — a reactive settings object
   seeded from `localStorage` and `watch`-persisted back under one namespaced key
-  (e.g. `wds.display`), with a typed default and a version field so a future shape
+  (`wds.display`), with a typed default and a `version` field so a future shape
   change can be migrated or discarded rather than throwing.
-- A `SettingsEditor.vue` panel mirroring `ScheduleEditor.vue`'s look, toggled from
-  the top bar next to **Schedule**.
-- Consumers read from the composable: `MapTreemap.vue` (hover label, labels,
-  motion, colors), the file-list/breadcrumb formatting (units).
+- **`SettingsModal.vue`** — the `<dialog>` shell: header (title + root switcher +
+  close), left category rail, right detail slot. Owns which category is active.
+- **`DisplaySettings.vue`** — the Display panel; reads/writes the composable.
+- **Scanning panel** — reuse the existing `ScheduleEditor.vue` body, lifting its
+  root from a prop fed by the modal switcher (it already takes `rootId`).
+- **Consumers** read the composable: `MapTreemap.vue` (hover label, later labels/
+  motion/colors) and the file-list/breadcrumb formatting (units).
+- **Units formatting** — thread the unit choice through a shared formatter rather
+  than re-reading settings at each `formatBytes` call site.
 
 ## Open questions
 
-- **Namespacing / instances.** One key for the whole app is fine; if per-root
-  display prefs are ever wanted, key by root id. Start global.
-- **Reset control.** A "restore defaults" button in the pane — cheap, worth it.
-- **Where units formatting lives.** `formatBytes` is called in several places;
-  thread the unit choice through a shared formatter rather than re-reading
-  settings at each call site.
+- **Reset control.** A "restore defaults" button on the Display panel — cheap,
+  worth it (client-local only; the server schedule has its own Save).
+- **Where units live.** `formatBytes` is called in several places
+  (`App.vue`, `FileList.vue`, `TypeList.vue`); pass the unit base into the
+  formatter or wrap it, don't re-read settings per call site.
+- **Switcher visibility.** Hide vs. disable the header root switcher on global
+  categories — lean toward hide so Display reads as unambiguously global.
 
 ## Recommendation
 
-Ship the composable + pane with **two real settings (hover full path, size units)**
-and wire the hover toggle to [feature 0008](0008-treemap-interaction-refinements.md).
-Everything else in the candidate list is a follow-up slotted into the same pane.
+Ship the modal with the **Display** category (two real settings: hover full path,
+size units) and the **Scanning** category (the migrated schedule form), retire
+the Schedule ghost button, and wire the hover toggle to
+[feature 0008](0008-treemap-interaction-refinements.md). Everything else in the
+Display candidate list is a follow-up that drops into the same rail.
 
 ## Decision
 
-Not yet decided — pending discussion.
+Decided: unified `<dialog>` settings modal, category rail + modal-wide root
+switcher, single ⚙ Settings button replacing the Schedule toggle. Ready to
+implement.

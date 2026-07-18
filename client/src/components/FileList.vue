@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { TreeChild } from "@webdirstat/shared";
 import { File, Folder, Link2 } from "@lucide/vue";
-import { formatBytes } from "../utils/format";
+import { useByteFormat } from "../composables/useDisplaySettings";
+
+const formatBytes = useByteFormat();
 
 /** Size-sorted children of the focused directory; clicking a row selects it. */
 const props = defineProps<{ children: TreeChild[]; totalSize: number }>();
