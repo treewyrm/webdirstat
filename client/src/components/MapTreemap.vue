@@ -208,7 +208,7 @@ function drawLabel(
   node: WorldNode,
   color = "rgba(255,255,255,0.9)",
 ): void {
-  if (w <= LABEL_MIN_W || h <= LABEL_MIN_H) return;
+  if (w < LABEL_MIN_W || h < LABEL_MIN_H) return;
   ctx.save();
   ctx.beginPath();
   ctx.rect(x, y, w, h);
