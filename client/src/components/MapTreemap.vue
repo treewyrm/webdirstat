@@ -188,13 +188,34 @@ function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, w: number
     // 0010). One drawImage per tile — cheaper than a per-tile gradient, and the base
     // color still shows through the translucent overlay.
     if (settings.shaded && w > 3 && h > 3) ctx.drawImage(cushionSprite(), x, y, w, h);
-    if (w > 3 && h > 3) {
-      ctx.strokeStyle = "rgba(0,0,0,0.25)";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    }
+    if (w > 3 && h > 3) drawTileBorder(ctx, x, y, w, h);
   }
   drawLabel(ctx, x, y, w, h, node);
+}
+
+/**
+ * Separator drawn on a tile's top and left edges only. A boundary shared by two
+ * adjacent tiles is thus painted once (by the lower/right neighbor), not twice —
+ * so no doubled 2px seam. A directory's outer right/bottom edge is covered by its
+ * `drawDirFrame` rect; the map's outermost edge is the canvas edge. Coordinates are
+ * snapped to device pixels (`lineWidth = 1/dpr`) so each seam is one crisp device pixel.
+ */
+function drawTileBorder(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
+  const lx = crisp(x);
+  const ty = crisp(y);
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = 1 / dpr;
+  ctx.beginPath();
+  ctx.moveTo(lx, y);
+  ctx.lineTo(lx, y + h); // left edge
+  ctx.moveTo(x, ty);
+  ctx.lineTo(x + w, ty); // top edge
+  ctx.stroke();
+}
+
+/** Snap a CSS-space coordinate to a device-pixel center so a 1/dpr line stays crisp. */
+function crisp(coord: number): number {
+  return (Math.round(coord * dpr) + 0.5) / dpr;
 }
 
 // Built once, reused for every shaded tile: a soft top-left specular highlight plus
