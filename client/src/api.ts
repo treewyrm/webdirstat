@@ -99,9 +99,13 @@ export async function fetchRootStatus(rootId: string): Promise<RootStatus> {
   return res.json() as Promise<RootStatus>;
 }
 
-/** Fetches the per-root space-by-file-type breakdown, pinned to the seeded generation. */
-export async function fetchTypes(rootId: string, generation?: number): Promise<TypeRollupResponse> {
+/**
+ * Fetches the space-by-file-type breakdown, pinned to the seeded generation. `path`
+ * scopes it to a subtree ("" = the whole root, answered from the precomputed table).
+ */
+export async function fetchTypes(rootId: string, path = "", generation?: number): Promise<TypeRollupResponse> {
   const params = new URLSearchParams();
+  if (path) params.set("path", path);
   if (generation != null) params.set("generation", String(generation));
   const query = params.toString();
   const res = await fetch(`/api/roots/${encodeURIComponent(rootId)}/types${query ? `?${query}` : ""}`);

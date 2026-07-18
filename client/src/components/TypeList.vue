@@ -1,29 +1,43 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { TypeRollupResponse } from "@webdirstat/shared";
 import { fetchTypes, NotScannedError } from "../api";
 import { colorForExt } from "../utils/color";
 import { formatBytes, formatCount } from "../utils/format";
 
 /**
- * The "by type" panel (feature 0005): a per-root breakdown of space by file
- * extension, size-sorted. Self-fetching from rootId + the seeded generation, so it
- * reads the same generation the map is pinned to and refetches when either changes.
+ * The "by type" panel (feature 0005): a breakdown of space by file extension,
+ * size-sorted. Self-fetching from rootId + the seeded generation, scoped to `path`
+ * (the currently focused folder; "" = the whole root). Refetches when any of them
+ * changes, debounced so flying through folders coalesces into one request.
  */
-const props = defineProps<{ rootId: string; generation: number | null }>();
+const props = defineProps<{ rootId: string; generation: number | null; path: string }>();
 
 const data = ref<TypeRollupResponse | null>(null);
 const error = ref<string | null>(null);
 const loading = ref(false);
 
-watch([() => props.rootId, () => props.generation], load, { immediate: true });
+let timer: ReturnType<typeof setTimeout> | null = null;
+watch([() => props.rootId, () => props.generation, () => props.path], scheduleLoad, { immediate: true });
+onBeforeUnmount(() => {
+  if (timer) clearTimeout(timer);
+});
+
+/** The folder this breakdown covers, for the header ("root" at the top level). */
+const scopeLabel = computed(() => props.path.split("/").filter(Boolean).at(-1) ?? "root");
+
+/** Coalesce rapid path changes (fly-through) into a single fetch. */
+function scheduleLoad(): void {
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(() => void load(), 200);
+}
 
 async function load(): Promise<void> {
   error.value = null;
   if (!props.rootId) return;
   loading.value = true;
   try {
-    data.value = await fetchTypes(props.rootId, props.generation ?? undefined);
+    data.value = await fetchTypes(props.rootId, props.path, props.generation ?? undefined);
   } catch (e) {
     data.value = null;
     error.value = e instanceof NotScannedError ? "Not scanned yet." : e instanceof Error ? e.message : String(e);
@@ -45,7 +59,7 @@ function label(ext: string): string {
 
 <template>
   <aside class="types">
-    <header class="head">By type</header>
+    <header class="head">By type <span class="scope" :title="path || 'root'">· {{ scopeLabel }}</span></header>
     <p v-if="error" class="note err">{{ error }}</p>
     <p v-else-if="loading && !data" class="note">Loading…</p>
     <p v-else-if="data && data.types.length === 0" class="note">No files.</p>
@@ -83,6 +97,12 @@ function label(ext: string): string {
   color: var(--muted);
   background: var(--hover);
   border-bottom: 1px solid var(--border);
+}
+
+.head .scope {
+  color: var(--accent);
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .row {

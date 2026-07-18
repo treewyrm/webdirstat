@@ -153,7 +153,7 @@ function flyToChild(child: TreeChild): void {
     <Breadcrumbs :chain="focusChain" @navigate="(path) => mapRef?.flyToPath(path)" />
 
     <main v-if="seed" class="content">
-      <TypeList v-if="showTypes" :root-id="selectedRootId" :generation="generation" />
+      <TypeList v-if="showTypes" :root-id="selectedRootId" :generation="generation" :path="focusPath" />
       <FileList :children="focusChildren" :total-size="focusSize" @select="flyToChild" />
 
       <section class="treemap-pane">

@@ -1,7 +1,8 @@
 # 0005 — File-type (extension) rollup
 
-Status: **Done** — raw per-root rollup + "By type" panel shipped. Grouping into
-families and subtree-scoped rollups remain follow-ups (see Open questions).
+Status: **Done** — raw rollup + "By type" panel shipped, both whole-root and
+subtree-scoped (the panel tracks the focused folder). Family grouping remains a
+follow-up (see Open questions).
 
 Prerequisite: [issue 0002 — Background scanning service](../issues/0002-background-scanning-service.md).
 Shares the scan-time **`ext`** column with
@@ -60,9 +61,12 @@ Capped + generation-pinned like the tree reads.
 - **Extension-less / special nodes.** Directories, symlinks, dotfiles with no
   extension, `.tar.gz` double extensions — define the split rule once (shared with
   0004 so search and rollup agree).
-- **Scope.** Per-root only, or also "types within the current subtree"? Whole-root
-  is the cheap precomputed case; subtree rollups would need either an on-demand
-  aggregate query or per-directory precomputation (heavier).
+- **Scope.** ~~Per-root only, or also "types within the current subtree"?~~
+  **Resolved:** both. Whole-root ("" path) is served from the precomputed
+  `type_rollup` table; a subpath is aggregated on demand with a recursive CTE over
+  just that subtree (`subtreeTypeRollup`), and the panel tracks the focused folder.
+  Per-directory precomputation was not needed — the on-demand query is bounded by
+  the subtree, and the expensive whole-tree case stays on the precomputed table.
 
 ## Recommendation
 
@@ -75,10 +79,11 @@ Grouping into families and subtree-scoped rollups are follow-ups.
 Adopted the recommendation. The walk fills `type_rollup` in its single pass
 ([persist.ts](../../server/src/scan/persist.ts)); reads go through
 `GET /api/roots/:id/types` ([types.ts](../../server/src/routes/types.ts) →
-`typeRollupOf` in [nodes.ts](../../server/src/store/nodes.ts)), generation-pinned and
-capped like the tree reads. The client shows a toggled "By type" panel
-([TypeList.vue](../../client/src/components/TypeList.vue)) whose swatches reuse the
-treemap's extension coloring (`colorForExt`,
-[color.ts](../../client/src/utils/color.ts)). Extension-less files land in the `""`
-bucket, shown as "(no extension)". Family grouping and subtree-scoped rollups are
-deferred.
+`typeRollupOf`/`subtreeTypeRollup` in [nodes.ts](../../server/src/store/nodes.ts)),
+generation-pinned and capped like the tree reads. The route's `path` param scopes it:
+"" reads the precomputed table, a subpath aggregates that subtree on demand. The
+client shows a toggled "By type" panel
+([TypeList.vue](../../client/src/components/TypeList.vue)) that tracks the focused
+folder (debounced) and whose swatches reuse the treemap's extension coloring
+(`colorForExt`, [color.ts](../../client/src/utils/color.ts)). Extension-less files
+land in the `""` bucket, shown as "(no extension)". Family grouping is deferred.

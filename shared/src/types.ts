@@ -113,11 +113,13 @@ export interface TypeRollupEntry {
   totalCount: number;
 }
 
-/** Per-root breakdown of space by file type, size-sorted and capped like tree reads. */
+/** Breakdown of space by file type, size-sorted and capped like tree reads. */
 export interface TypeRollupResponse {
   /** The generation this rollup was read from (pins with the seeded tree generation). */
   generation: number;
   root: string;
+  /** The subtree this breakdown covers ("" = the whole root); echoes the request. */
+  path: string;
   /** Extensions, largest first, capped at the request `limit`. */
   types: TypeRollupEntry[];
   /** Present when capped: the extensions (and their bytes) past the cap. */

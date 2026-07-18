@@ -120,30 +120,70 @@ export interface TypeRollup {
   omittedTail?: { count: number; bytes: number };
 }
 
+/** A raw `{ext, total_bytes, total_count}` row from either rollup query. */
+interface TypeRow {
+  ext: string;
+  total_bytes: number;
+  total_count: number;
+}
+
 /**
- * The per-extension rollup for a generation, largest first, capped at `limit`, with
- * the omitted tail (count of extensions past the cap + their bytes) summed. Read
- * straight from the tiny `type_rollup` table the walk filled — no re-aggregation.
+ * Caps a fully-sorted list of per-extension rows at `limit`, summing what's left
+ * off into the omitted tail. There is one row per extension either way (never per
+ * file), so materializing all of them and slicing in JS is cheap regardless of how
+ * many files the scan covered.
+ */
+function capTypes(sorted: TypeRow[], limit: number): TypeRollup {
+  const shown = sorted.slice(0, limit);
+  const types: TypeRollupEntry[] = shown.map((r) => ({ ext: r.ext, totalBytes: r.total_bytes, totalCount: r.total_count }));
+  const result: TypeRollup = { types };
+  const rest = sorted.slice(limit);
+  if (rest.length > 0) {
+    result.omittedTail = { count: rest.length, bytes: rest.reduce((sum, r) => sum + r.total_bytes, 0) };
+  }
+  return result;
+}
+
+/**
+ * The whole-root per-extension rollup for a generation, largest first, capped at
+ * `limit`. Read straight from the tiny `type_rollup` table the walk filled — one
+ * row per extension, no re-aggregation over the tree.
  */
 export function typeRollupOf(store: Store, rootId: string, generation: number, limit: number): TypeRollup {
   const rows = store.db
     .prepare(
       `SELECT ext, total_bytes, total_count
-       FROM type_rollup WHERE generation = ? AND root_id = ? ORDER BY total_bytes DESC, ext ASC LIMIT ?`,
+       FROM type_rollup WHERE generation = ? AND root_id = ? ORDER BY total_bytes DESC, ext ASC`,
     )
-    .all(generation, rootId, limit) as Array<{ ext: string; total_bytes: number; total_count: number }>;
+    .all(generation, rootId) as unknown as TypeRow[];
+  return capTypes(rows, limit);
+}
 
-  const agg = store.db
-    .prepare("SELECT COUNT(*) AS c, COALESCE(SUM(total_bytes), 0) AS b FROM type_rollup WHERE generation = ? AND root_id = ?")
-    .get(generation, rootId) as { c: number; b: number };
-
-  const types: TypeRollupEntry[] = rows.map((r) => ({ ext: r.ext, totalBytes: r.total_bytes, totalCount: r.total_count }));
-
-  const shownBytes = types.reduce((sum, t) => sum + t.totalBytes, 0);
-  const omittedCount = agg.c - types.length;
-  const result: TypeRollup = { types };
-  if (omittedCount > 0) result.omittedTail = { count: omittedCount, bytes: agg.b - shownBytes };
-  return result;
+/**
+ * The per-extension rollup for one subtree (files under `parentId`, recursively),
+ * aggregated on demand — there is no precomputed per-directory table. The recursive
+ * CTE walks parent_id links, which stay within the node's generation (ids are
+ * generation-scoped), so no extra generation filter is needed. `COALESCE(ext,'')`
+ * mirrors the walk's extension-less `""` bucket. Bounded by the subtree's size, so
+ * the root case must go through {@link typeRollupOf} instead of aggregating the
+ * whole tree here.
+ */
+export function subtreeTypeRollup(store: Store, parentId: number, limit: number): TypeRollup {
+  const rows = store.db
+    .prepare(
+      `WITH RECURSIVE sub(id) AS (
+         SELECT id FROM node WHERE parent_id = ?
+         UNION ALL
+         SELECT n.id FROM node n JOIN sub ON n.parent_id = sub.id
+       )
+       SELECT COALESCE(n.ext, '') AS ext, SUM(n.size) AS total_bytes, COUNT(*) AS total_count
+       FROM node n JOIN sub ON n.id = sub.id
+       WHERE n.kind = 'file'
+       GROUP BY COALESCE(n.ext, '')
+       ORDER BY total_bytes DESC, ext ASC`,
+    )
+    .all(parentId) as unknown as TypeRow[];
+  return capTypes(rows, limit);
 }
 
 /** A node by id, scoped to a (root, generation) so a stale/foreign id resolves to nothing. */
