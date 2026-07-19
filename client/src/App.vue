@@ -15,6 +15,7 @@ import { AGE_RAMP, type AgeBounds } from "./utils/color";
 import { useByteFormat, useDisplaySettings } from "./composables/useDisplaySettings";
 import { useAuth } from "./composables/useAuth";
 import MapTreemap from "./components/MapTreemap.vue";
+import TileToolbar, { type TargetMode, type Tool } from "./components/TileToolbar.vue";
 import SettingsModal from "./components/SettingsModal.vue";
 import Breadcrumbs from "./components/Breadcrumbs.vue";
 import ScanStatus from "./components/ScanStatus.vue";
@@ -34,6 +35,15 @@ const showSettings = ref(false);
 /** Which left pane is shown; the three panes are mutually exclusive tabs now. */
 type SideTab = "files" | "types" | "search";
 const activeTab = ref<SideTab>("files");
+
+/**
+ * Tileview toolbar state (feature 0019, prototype). The interaction tool and the
+ * selection target both live here so they can later drive the canvas; the selection
+ * set they feed isn't built yet, so the count is a placeholder.
+ */
+const tool = ref<Tool>("navigate");
+const targetMode = ref<TargetMode>("files");
+const selectionCount = ref(0);
 
 const { settings } = useDisplaySettings();
 const formatBytes = useByteFormat();
@@ -279,10 +289,6 @@ function revealResult(result: SearchResult): void {
         <option v-for="root in roots" :key="root.id" :value="root.id">{{ root.label }}</option>
       </select>
       <button :disabled="!selectedRootId" @click="onStartStop">{{ globalScanning ? "Stop" : "Scan" }}</button>
-      <select v-model="settings.colorMode" class="color-mode" title="Tile color mode">
-        <option value="type">Color: Type</option>
-        <option value="age">Color: Age</option>
-      </select>
       <button class="ghost" :class="{ active: showSettings }" @click="showSettings = !showSettings">⚙ Settings</button>
       <button v-if="authRequired" class="ghost" title="Log out" @click="signOut">Log out</button>
 
@@ -343,7 +349,16 @@ function revealResult(result: SearchResult): void {
         </div>
       </div>
 
-      <section class="treemap-pane">
+      <div class="view">
+        <TileToolbar
+          v-model:tool="tool"
+          v-model:target-mode="targetMode"
+          :selection-count="selectionCount"
+          @clear="selectionCount = 0"
+          @copy="() => {}"
+          @save="() => {}"
+        />
+        <section class="treemap-pane">
         <MapTreemap
           ref="mapRef"
           :root-id="selectedRootId"
@@ -367,7 +382,8 @@ function revealResult(result: SearchResult): void {
           <template v-if="hoveredNode.error">({{ hoveredNode.error }})</template>
         </div>
         <div class="hint">scroll to zoom · drag to pan · click a folder to fly in</div>
-      </section>
+        </section>
+      </div>
     </main>
 
     <p v-else-if="notScanned" class="placeholder">This root hasn't been scanned yet. Hit Scan to build the store.</p>
@@ -407,10 +423,6 @@ function revealResult(result: SearchResult): void {
 .ghost.active {
   color: var(--accent);
   border-color: var(--accent);
-}
-
-.color-mode {
-  font-size: 0.85rem;
 }
 
 .age-legend {
@@ -501,10 +513,21 @@ function revealResult(result: SearchResult): void {
   overflow-y: auto;
 }
 
+/* The view column: its own toolbar docked above the map. Scoped to this pane (not the
+   app header) so a future non-treemap view can carry its own strip in the same slot. */
+.view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
 .treemap-pane {
   flex: 1;
   position: relative;
   min-width: 0;
+  min-height: 0;
 }
 
 .tooltip {
