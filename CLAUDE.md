@@ -27,9 +27,15 @@ strips the `node:` prefix from builtins, and `node:sqlite` has no bare `sqlite` 
 esbuild bundle fails at runtime. tsdown preserves the specifier. See
 [server/tsdown.config.ts](server/tsdown.config.ts) (two entries: `index.ts` + the scan worker).
 
-There is **no test suite and no working linter**. `pnpm lint` delegates to per-package `lint`
-scripts that don't exist (no ESLint config anywhere), so it fails — use `pnpm typecheck` for
-verification. Debugging both dev servers together is set up in [.claude/launch.json](.claude/launch.json).
+`pnpm test` runs the test suite: the built-in **`node:test`** runner driven through `tsx` (no
+Jest/Vitest), over `*.test.ts` files next to their subject. Coverage of the pure/security-critical
+logic is being filled in — see [docs/features/0017-testing.md](docs/features/0017-testing.md) for
+what's tested and what's deferred (Vue components, HTTP/SSE end-to-end). Use `pnpm typecheck` +
+`pnpm test` for verification.
+
+There is **no working linter**. `pnpm lint` delegates to per-package `lint` scripts that don't exist
+(no ESLint config anywhere), so it fails. Debugging both dev servers together is set up in
+[.claude/launch.json](.claude/launch.json).
 
 ### Screenshotting the running app (headless)
 
