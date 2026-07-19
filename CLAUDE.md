@@ -104,7 +104,9 @@ the client reads the tree in slices and never holds more than what's on screen.
 generation-scoped, reassigned each swap), a request against a swapped-out generation returns
 **410**; the client re-seeds from its durable **path** anchor against the new generation.
 
-**API** (all under `/api`, [server/src/routes/](server/src/routes/)):
+**API** (all under `/api`, [server/src/routes/](server/src/routes/)) — full reference with the
+behavioral protocol (generation pinning, the 410 re-seed, caps/folds, SSE lifecycle) in
+[docs/api.md](docs/api.md):
 - `GET /api/roots` — `{ id, label }` only, never host paths.
 - `GET /api/tree?root&path&limit&generation` — one directory level, size-sorted, capped, with an
   `omittedTail` (count + bytes past the cap). The **path entry point**; each child carries its `id`.

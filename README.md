@@ -68,6 +68,8 @@ the read-only share). See [docker-compose.yml](docker-compose.yml) for a multi-s
 | `SCAN_ON_WINDOW_END` | `finish` | `finish` lets a running scan complete past its window; `abort` cancels it. |
 | `HISTORY_GENERATIONS` | `0` | Full past generations to retain (`0` = keep none). |
 | `SCAN_ENABLED` | inferred | Master switch for *automatic* scans; defaults on if `SCAN_INTERVAL` or `SCAN_WINDOWS` is set. Manual scans always work. |
+| `PASSWORD` | unset (open) | When set, enables a shared-password gate: every `/api/**` call needs a session cookie obtained from a login form. Unset = no gate. |
+| `SESSION_SECRET` | ephemeral | Key (≥32 chars) that seals the session cookie. Unset → a random key is generated at startup (logins reset on restart); set it to keep sessions across restarts. |
 
 These seed the per-root defaults; the schedule is editable per root in the UI and persisted in
 the store. With no schedule configured the service is manual-only (Start/Stop) over the same
@@ -81,3 +83,8 @@ slice store.
   on a scan to browse.
 - Very large trees are handled by the slice/tile model and level-of-detail rendering: the
   browser only ever holds what's on screen, so a multi-million-file NAS stays navigable.
+- The app is **unauthenticated by default**. Set `PASSWORD` to enable the shared-password gate;
+  the cookie works over plain-HTTP LAN, so put TLS in front for anything wider. See
+  [feature 0001](docs/features/0001-password-protection.md).
+
+The HTTP API is documented in [docs/api.md](docs/api.md).

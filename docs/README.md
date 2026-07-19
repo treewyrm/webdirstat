@@ -2,6 +2,7 @@
 
 Working notes for design decisions and planned work, tracked alongside the code so they survive between sessions.
 
+- **[api.md](api.md)** — HTTP API reference: the endpoints and their behavioral protocol (generation pinning, the 410 re-seed, caps/folds, SSE lifecycle). A living reference, not numbered.
 - **[issues/](issues/)** — open design questions, scaling concerns, bugs worth writing down before fixing. One file per issue, numbered.
 - **[features/](features/)** — write-ups for planned features: what it does, rough shape of the change, open questions.
 
