@@ -177,6 +177,16 @@ declares a separate writable `/db` volume alongside the read-only `/data` mounts
 `HISTORY_GENERATIONS`, and `SCAN_ENABLED` seed the per-root schedule defaults in
 [config.ts](server/src/config.ts); the UI overrides and persists them per root.
 
+`PASSWORD` (env, unset = open) enables the opt-in shared-password gate (feature 0001,
+[auth.ts](server/src/auth.ts) + [routes/auth.ts](server/src/routes/auth.ts)): an `/api/**`
+guard registered first in [index.ts](server/src/index.ts) that 401s unauthenticated API calls
+(exempting `login`/`logout`/`session`/`health`), a session-cookie login form
+([LoginGate.vue](client/src/components/LoginGate.vue) via [Root.vue](client/src/Root.vue)), and
+a Log-out button. `SESSION_SECRET` (≥32 chars) seals the cookie; unset → an ephemeral key is
+generated with a warning (logins reset on restart). The cookie is `secure:false` (works over
+plain-HTTP LAN); put TLS in front for wider exposure. The static SPA is served unauthenticated
+so the login form can load — all private data is under `/api`.
+
 ## docs/ convention
 
 [docs/issues/](docs/issues/) and [docs/features/](docs/features/) hold design notes that outlive a

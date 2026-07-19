@@ -18,6 +18,35 @@ export async function fetchRoots(): Promise<ScanRoot[]> {
   return res.json() as Promise<ScanRoot[]>;
 }
 
+/** Whether a password gate is configured (feature 0001) and whether this client is past it. */
+export interface SessionInfo {
+  required: boolean;
+  authenticated: boolean;
+}
+
+/** Probes the gate: `required=false` means the server is open (no `PASSWORD` set). */
+export async function fetchSession(): Promise<SessionInfo> {
+  const res = await fetch("/api/session");
+  if (!res.ok) throw new Error(`Failed to load session: ${res.status}`);
+  return res.json() as Promise<SessionInfo>;
+}
+
+/** Exchanges the shared password for a session cookie. Throws on a wrong password (401). */
+export async function login(password: string): Promise<void> {
+  const res = await fetch("/api/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (res.status === 401) throw new Error("Incorrect password");
+  if (!res.ok) throw new Error(`Login failed: ${res.status}`);
+}
+
+/** Clears the session cookie. Best-effort — a failure still drops the client to the gate. */
+export async function logout(): Promise<void> {
+  await fetch("/api/logout", { method: "POST" }).catch(() => {});
+}
+
 export class NotScannedError extends Error {
   constructor() {
     super("This root has not been scanned yet.");

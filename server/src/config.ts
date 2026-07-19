@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import type { RootSchedule, ScanRoot } from "@webdirstat/shared";
+import { type AuthConfig, generateSessionSecret } from "./auth.ts";
 import { logger } from "./logger.ts";
 import { parseDuration, parseWindows } from "./scan/schedule.ts";
 
@@ -80,6 +81,30 @@ export interface Config {
   dbPath: string;
   /** Env-seeded per-root schedule defaults, written to `root_settings` on first run. */
   scheduleDefaults: RootSchedule;
+  /** Shared-password gate (feature 0001). `null` = disabled (no `PASSWORD` set). */
+  auth: AuthConfig | null;
+}
+
+/**
+ * Builds the auth gate from env. Opt-in like `ROOTS`: no `PASSWORD` → `null` (open).
+ * The seal key is separate from the login password; if `SESSION_SECRET` is missing or
+ * too weak we mint an ephemeral one and warn — logins then reset on restart and won't be
+ * shared across replicas, which is fine for a single container but worth flagging.
+ */
+function loadAuth(): AuthConfig | null {
+  const password = process.env.PASSWORD;
+  if (!password) return null;
+
+  let sessionSecret = process.env.SESSION_SECRET;
+  if (!sessionSecret || sessionSecret.length < 32) {
+    if (sessionSecret) logger.warn("SESSION_SECRET is shorter than 32 chars; ignoring it");
+    sessionSecret = generateSessionSecret();
+    logger.warn(
+      "SESSION_SECRET not set — using an ephemeral key. Logins reset on restart and won't work across replicas; set SESSION_SECRET (≥32 chars) to persist them.",
+    );
+  }
+  logger.info("password gate enabled");
+  return { password, sessionSecret };
 }
 
 const HOUR_MS = 3_600_000;
@@ -117,5 +142,6 @@ export async function loadConfig(): Promise<Config> {
       onWindowEnd: process.env.SCAN_ON_WINDOW_END === "abort" ? "abort" : "finish",
       historyGenerations,
     },
+    auth: loadAuth(),
   };
 }

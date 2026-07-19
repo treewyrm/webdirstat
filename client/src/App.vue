@@ -13,6 +13,7 @@ import {
 import type { WorldNode } from "./treemap/layout";
 import { AGE_RAMP, type AgeBounds } from "./utils/color";
 import { useByteFormat, useDisplaySettings } from "./composables/useDisplaySettings";
+import { useAuth } from "./composables/useAuth";
 import MapTreemap from "./components/MapTreemap.vue";
 import SettingsModal from "./components/SettingsModal.vue";
 import Breadcrumbs from "./components/Breadcrumbs.vue";
@@ -36,6 +37,9 @@ const activeTab = ref<SideTab>("files");
 
 const { settings } = useDisplaySettings();
 const formatBytes = useByteFormat();
+
+/** Password gate (feature 0001): the logout control shows only when a gate is configured. */
+const { required: authRequired, signOut } = useAuth();
 
 /** The root slice passed to the map; its generation pins every read this session. */
 const seed = shallowRef<TreeSlice | null>(null);
@@ -186,6 +190,7 @@ function revealResult(result: SearchResult): void {
         <option value="age">Color: Age</option>
       </select>
       <button class="ghost" :class="{ active: showSettings }" @click="showSettings = !showSettings">⚙ Settings</button>
+      <button v-if="authRequired" class="ghost" title="Log out" @click="signOut">Log out</button>
 
       <ScanStatus :scanner="scanner" :roots="roots" :root-status="rootStatus" :error="scanError" />
     </header>
