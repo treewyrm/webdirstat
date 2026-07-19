@@ -6,6 +6,8 @@ import type { TreeChild, TreeSlice } from "@webdirstat/shared";
 import { fetchTreeBatch } from "../api";
 import { type AgeBounds } from "../utils/color";
 import { useDisplaySettings } from "../composables/useDisplaySettings";
+import { useSelection } from "../composables/useSelection";
+import type { TargetMode, Tool } from "./TileToolbar.vue";
 import { indexById, layoutInto, makeRoot, type WorldNode } from "../treemap/layout";
 import {
   chunk,
@@ -18,6 +20,7 @@ import {
 } from "./MapTreemap.draw";
 
 const { settings } = useDisplaySettings();
+const selection = useSelection();
 
 const props = defineProps<{
   rootId: string;
@@ -25,6 +28,10 @@ const props = defineProps<{
   highlightId?: number | null;
   /** The world root's path relative to the configured root; "" = full root (feature 0016). */
   basePath?: string;
+  /** Canvas interaction tool (feature 0019): Navigate pans, Marquee draws a box. */
+  tool?: Tool;
+  /** What a click/marquee marks (feature 0019): file leaves vs. enclosing folders. */
+  targetMode?: TargetMode;
 }>();
 const emit = defineEmits<{
   focus: [
@@ -40,7 +47,14 @@ const emit = defineEmits<{
   agebounds: [AgeBounds | null];
   /** Shift-click a solid directory tile: scope the view to it (root-relative path). */
   scope: [string];
+  /** A transient selection message (feature 0019), e.g. the Files-mode bulk-cap refusal. */
+  notify: [string];
 }>();
+
+const tool = () => props.tool ?? "navigate";
+const targetMode = () => props.targetMode ?? "files";
+/** Files-mode marquee upper bound (feature 0019, open question): refuse rather than mark thousands. */
+const FILES_MARQUEE_CAP = 500;
 
 // LOD + interaction tuning.
 const EXPAND_PX = 24; // min on-screen size before a directory shows its interior
@@ -82,16 +96,47 @@ let drewShimmer = false;
 let resizeObserver: ResizeObserver | undefined;
 let flyRaf: number | null = null;
 
+// --- selection / marquee (feature 0019) ---
+/** In-progress marquee box in *screen* coords, or null when not dragging one. */
+let marquee: { x0: number; y0: number; x1: number; y1: number; mode: "add" | "subtract" } | null = null;
+/** The gesture that armed on mousedown but hasn't crossed the drag threshold yet. */
+let armed: { x: number; y: number; mode: "add" | "subtract" } | null = null;
+/** Set once a marquee drag actually moved, so the trailing `click` is swallowed. */
+let suppressClick = false;
+/** Spacebar held → in Marquee mode, drag pans (drawing-app convention). */
+let spaceDown = false;
+/** Theme accent/danger sampled once, for the selection wash + marquee preview. */
+let accentColor = "#4c8dff";
+let dangerColor = "#e5484d";
+
 // --- lifecycle ---
 
 onMounted(() => {
   const canvas = canvasRef.value!;
   measure();
-  zoomBehavior = zoom<HTMLCanvasElement, unknown>().scaleExtent([MIN_SCALE, MAX_SCALE]).on("zoom", onZoom);
+  const styles = getComputedStyle(canvas);
+  accentColor = styles.getPropertyValue("--accent").trim() || accentColor;
+  dangerColor = styles.getPropertyValue("--danger").trim() || dangerColor;
+  zoomBehavior = zoom<HTMLCanvasElement, unknown>()
+    .scaleExtent([MIN_SCALE, MAX_SCALE])
+    // Pan only for non-marquee gestures; wheel always zooms. A marquee gesture (see
+    // `marqueeModeFor`) is drawn by our own handlers instead, so d3 must not grab it.
+    .filter((event) => {
+      if (event.type === "wheel") return true;
+      if (event.type === "dblclick") return false;
+      if (typeof event.button === "number" && event.button !== 0) return false;
+      return marqueeModeFor(event as MouseEvent) === null;
+    })
+    .on("zoom", onZoom);
   select(canvas).call(zoomBehavior);
   canvas.addEventListener("mousemove", onMouseMove);
   canvas.addEventListener("mouseleave", () => emit("hover", null));
+  canvas.addEventListener("mousedown", onMarqueeDown);
   canvas.addEventListener("click", onClick);
+  window.addEventListener("mousemove", onMarqueeMove);
+  window.addEventListener("mouseup", onMarqueeUp);
+  window.addEventListener("keydown", onKey);
+  window.addEventListener("keyup", onKey);
   resizeObserver = new ResizeObserver(onResize);
   if (wrapperRef.value) resizeObserver.observe(wrapperRef.value);
   reseed();
@@ -102,7 +147,18 @@ onBeforeUnmount(() => {
   fetchController?.abort();
   if (planTimer) clearTimeout(planTimer);
   if (flyRaf) cancelAnimationFrame(flyRaf);
+  window.removeEventListener("mousemove", onMarqueeMove);
+  window.removeEventListener("mouseup", onMarqueeUp);
+  window.removeEventListener("keydown", onKey);
+  window.removeEventListener("keyup", onKey);
 });
+
+function onKey(event: KeyboardEvent): void {
+  if (event.code !== "Space") return;
+  // Space pans in Marquee mode; swallow its default (page scroll) only while relevant.
+  spaceDown = event.type === "keydown";
+  if (tool() === "marquee") event.preventDefault();
+}
 
 // Reseed whenever the root slice identity changes (new root or new generation).
 watch(() => props.seed, reseed);
@@ -112,6 +168,10 @@ watch(() => settings.shaded, scheduleDraw);
 
 // List-row hover (feature 0012) is a pure overlay repaint — coalesce into the RAF.
 watch(() => props.highlightId, scheduleDraw);
+
+// The selection wash (feature 0019) is a pure overlay repaint; ops replace the marks
+// array on every real change, so this fires exactly when the wash needs redrawing.
+watch(() => selection.marksFor(props.rootId), scheduleDraw);
 
 // Type/Age color mode is also a pure repaint; re-emit bounds so the legend is ready.
 watch(
@@ -224,10 +284,81 @@ function draw(): void {
 
   drawNode(ctx, worldRoot);
 
+  drawSelectionWash(ctx, worldRoot, false);
+  if (marquee) drawMarquee(ctx);
+
   if (props.highlightId != null) drawHighlight(ctx, props.highlightId);
 
   // Keep animating while any shimmer placeholder is on screen (the gradient pan).
   if (drewShimmer) scheduleDraw();
+}
+
+/** Screen rect of a world node under the current camera, or null if fully off-screen. */
+function screenRect(node: WorldNode): { x: number; y: number; w: number; h: number } | null {
+  const { k, x, y } = transform;
+  const sx0 = k * node.x0 + x;
+  const sy0 = k * node.y0 + y;
+  const w = k * (node.x1 - node.x0);
+  const h = k * (node.y1 - node.y0);
+  if (sx0 + w < 0 || sy0 + h < 0 || sx0 > cw || sy0 > ch) return null;
+  return { x: sx0, y: sy0, w, h };
+}
+
+/**
+ * The selection wash (feature 0019): a tint over every marked item's whole rect. Drawn
+ * at the *shallowest* mark and not descended into — one flat wash per mark, so a marked
+ * folder tints uniformly over its children (visualizing subsumption) without the alpha
+ * stacking that re-washing each descendant would cause. Reuses the overlay-pass idea of
+ * the list→map highlight (feature 0012) rather than a DOM layer.
+ */
+function drawSelectionWash(ctx: CanvasRenderingContext2D, node: WorldNode, underMark: boolean): void {
+  const marked = underMark || (node.kind !== "tail" && node.kind !== "small" && selection.has(props.rootId, node.path));
+  if (marked) {
+    const rect = screenRect(node);
+    if (rect && rect.w >= 1 && rect.h >= 1) {
+      ctx.save();
+      ctx.fillStyle = accentColor;
+      ctx.globalAlpha = 0.32;
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = accentColor;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(rect.x + 0.75, rect.y + 0.75, rect.w - 1.5, rect.h - 1.5);
+      ctx.restore();
+    }
+    return; // don't descend: the parent wash already covers the whole subtree
+  }
+  if (node.children) for (const child of node.children) drawSelectionWash(ctx, child, false);
+}
+
+/** Draw the live marquee box plus a preview wash over what a release would mark/unmark. */
+function drawMarquee(ctx: CanvasRenderingContext2D): void {
+  if (!marquee) return;
+  const preview = collectMarqueeTargets(marquee.mode);
+  const color = marquee.mode === "subtract" ? dangerColor : accentColor;
+  for (const node of preview) {
+    const rect = screenRect(node);
+    if (!rect || rect.w < 1 || rect.h < 1) continue;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.globalAlpha = marquee.mode === "subtract" ? 0.22 : 0.28;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.restore();
+  }
+  const x = Math.min(marquee.x0, marquee.x1);
+  const y = Math.min(marquee.y0, marquee.y1);
+  const w = Math.abs(marquee.x1 - marquee.x0);
+  const h = Math.abs(marquee.y1 - marquee.y0);
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.1;
+  ctx.fillRect(x, y, w, h);
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  ctx.strokeRect(x + 0.5, y + 0.5, w, h);
+  ctx.restore();
 }
 
 /**
@@ -432,23 +563,203 @@ function nodeAtEvent(event: MouseEvent): WorldNode | null {
   return hitTest(worldX, worldY);
 }
 
+/** Like {@link hitTest} but returns the whole root→hit chain (for enclosing-folder resolution). */
+function chainAtEvent(event: MouseEvent): WorldNode[] {
+  const worldX = (event.offsetX - transform.x) / transform.k;
+  const worldY = (event.offsetY - transform.y) / transform.k;
+  const chain: WorldNode[] = [];
+  if (!worldRoot) return chain;
+  let node: WorldNode = worldRoot;
+  chain.push(node);
+  for (;;) {
+    const expanded =
+      node.kind === "directory" &&
+      node.children &&
+      transform.k * (node.x1 - node.x0) > EXPAND_PX &&
+      transform.k * (node.y1 - node.y0) > EXPAND_PX;
+    if (!expanded || !node.children) return chain;
+    const child = node.children.find((c) => worldX >= c.x0 && worldX < c.x1 && worldY >= c.y0 && worldY < c.y1);
+    if (!child) return chain;
+    node = child;
+    chain.push(node);
+  }
+}
+
+/** The deepest real directory in a hit chain — the folder a Folders-mode click resolves to. */
+function enclosingDir(chain: WorldNode[]): WorldNode | null {
+  for (let i = chain.length - 1; i >= 0; i--) if (chain[i]!.kind === "directory") return chain[i]!;
+  return null;
+}
+
 function onMouseMove(event: MouseEvent): void {
   emit("hover", nodeAtEvent(event));
 }
 
+/**
+ * A plain click marks one target (feature 0019). The dead fly-to-folder branch is gone
+ * (it was effectively unreachable — a folder big enough to click was already expanded).
+ * Fly-in survives via the breadcrumbs and file-list; the canvas click now toggles a
+ * mark. Shift-click still scopes (feature 0016), resolving up to the enclosing folder.
+ */
 function onClick(event: MouseEvent): void {
-  const node = nodeAtEvent(event);
+  if (suppressClick) {
+    suppressClick = false;
+    return;
+  }
+  const chain = chainAtEvent(event);
+  const node = chain.at(-1);
   if (!node) return;
   if (node.kind === "small") {
     unfold(node);
     return;
   }
-  if (node.kind !== "directory" || node.childCount === 0) return;
-  // Shift-click a solid directory tile scopes the view to it (feature 0016); a plain
-  // click flies in. Only unexpanded directories are catchable — once expanded, the
-  // rect is covered by children — so this is a bonus accelerator, not the main path.
-  if (event.shiftKey) emit("scope", node.path);
-  else flyTo(node);
+  if (node.kind === "tail") return;
+  if (event.shiftKey) {
+    const dir = enclosingDir(chain);
+    if (dir && dir.depth > 0) emit("scope", dir.path);
+    return;
+  }
+  // Files mode marks the hit itself (a leaf, or a solid sub-folder tile); Folders mode
+  // resolves up to the enclosing directory, so clicking a file tile marks its folder.
+  const target = targetMode() === "folders" ? enclosingDir(chain) : node;
+  if (target && target.depth > 0) selection.toggle(props.rootId, target.path);
+}
+
+// --- marquee selection (feature 0019) ---
+
+/**
+ * The marquee mode this mousedown would begin, or null if it's a pan/other gesture.
+ * Navigate keeps modifier accelerators (shift-drag adds, alt-drag subtracts); Marquee
+ * makes plain-drag the box (alt subtracts) and relocates pan to space-drag.
+ */
+function marqueeModeFor(event: MouseEvent): "add" | "subtract" | null {
+  if (event.button !== 0) return null;
+  if (event.altKey) return "subtract";
+  if (tool() === "marquee") return spaceDown ? null : "add";
+  return event.shiftKey ? "add" : null; // Navigate: plain-drag pans
+}
+
+function onMarqueeDown(event: MouseEvent): void {
+  const mode = marqueeModeFor(event);
+  if (!mode) return;
+  // Arm; the box only appears once the drag crosses the threshold, so a shift-*click*
+  // (scope) with no movement still falls through to onClick.
+  armed = { x: event.offsetX, y: event.offsetY, mode };
+  marquee = null;
+}
+
+function onMarqueeMove(event: MouseEvent): void {
+  if (!armed || !canvasRef.value) return;
+  const rect = canvasRef.value.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  if (!marquee) {
+    if (Math.abs(x - armed.x) < 3 && Math.abs(y - armed.y) < 3) return; // below threshold
+    marquee = { x0: armed.x, y0: armed.y, x1: x, y1: y, mode: armed.mode };
+  } else {
+    marquee.x1 = x;
+    marquee.y1 = y;
+  }
+  scheduleDraw();
+}
+
+function onMarqueeUp(): void {
+  if (marquee) {
+    commitMarquee();
+    suppressClick = true; // a drag shouldn't also fire a mark-toggle click
+    marquee = null;
+    scheduleDraw();
+  }
+  armed = null;
+}
+
+/** Screen-space marquee box → world rect (normalized so x0<x1, y0<y1). */
+function marqueeWorldRect(): { x0: number; y0: number; x1: number; y1: number } {
+  const m = marquee!;
+  const toWorldX = (sx: number) => (sx - transform.x) / transform.k;
+  const toWorldY = (sy: number) => (sy - transform.y) / transform.k;
+  return {
+    x0: toWorldX(Math.min(m.x0, m.x1)),
+    y0: toWorldY(Math.min(m.y0, m.y1)),
+    x1: toWorldX(Math.max(m.x0, m.x1)),
+    y1: toWorldY(Math.max(m.y0, m.y1)),
+  };
+}
+
+type Rect = { x0: number; y0: number; x1: number; y1: number };
+
+/** True when `inner`'s rect lies entirely within `outer`'s. */
+function rectContains(outer: Rect, inner: Rect): boolean {
+  return outer.x0 <= inner.x0 && inner.x1 <= outer.x1 && outer.y0 <= inner.y0 && inner.y1 <= outer.y1;
+}
+
+function intersects(node: WorldNode, box: Rect): boolean {
+  return node.x0 < box.x1 && node.x1 > box.x0 && node.y0 < box.y1 && node.y1 > box.y0;
+}
+
+/**
+ * The laid-out nodes a marquee (current mode) would act on. Files mode collects
+ * fully-contained leaves; Folders mode collects fully-contained directories, not
+ * descending into a captured folder (subsumption). Used for both the live preview and
+ * the commit, so they can't drift.
+ */
+function collectMarqueeTargets(mode: "add" | "subtract"): WorldNode[] {
+  if (!worldRoot || !marquee) return [];
+  const box = marqueeWorldRect();
+  const out: WorldNode[] = [];
+  const folders = targetMode() === "folders";
+
+  const walk = (node: WorldNode): void => {
+    if (!intersects(node, box)) return;
+    if (folders) {
+      if (node.kind === "directory" && node.depth > 0 && rectContains(box, node)) {
+        // subtract only touches existing marks; add takes any contained folder
+        if (mode === "add" || selection.has(props.rootId, node.path)) out.push(node);
+        return; // subsume: don't descend into a captured folder
+      }
+    } else if ((node.kind === "file" || node.kind === "symlink") && rectContains(box, node)) {
+      if (mode === "add" || selection.has(props.rootId, node.path)) out.push(node);
+      return;
+    }
+    if (node.children) for (const child of node.children) walk(child);
+  };
+  walk(worldRoot);
+
+  // Folders-mode undershoot: a box that fully contains no folder but lies wholly within
+  // one marks *that* folder (gapless packing means a sloppy box rarely encloses a tile).
+  if (folders && mode === "add" && out.length === 0) {
+    const enclosing = deepestDirContaining(box);
+    if (enclosing && enclosing.depth > 0) out.push(enclosing);
+  }
+  return out;
+}
+
+/** The deepest laid-out directory whose rect fully contains the box (undershoot case). */
+function deepestDirContaining(box: Rect): WorldNode | null {
+  let node = worldRoot!;
+  for (;;) {
+    const child = node.children?.find((c) => c.kind === "directory" && rectContains(c, box));
+    if (!child) return node === worldRoot ? null : node;
+    node = child;
+  }
+}
+
+function commitMarquee(): void {
+  if (!marquee) return;
+  const mode = marquee.mode;
+  const targets = collectMarqueeTargets(mode);
+  const paths = targets.map((n) => n.path);
+  if (mode === "subtract") {
+    selection.removeMany(props.rootId, paths);
+    return;
+  }
+  // Files-mode bulk cap (open question, feature 0019): refuse a box that would mark a
+  // flood of individual files rather than silently producing thousands of export lines.
+  if (targetMode() === "files" && paths.length > FILES_MARQUEE_CAP) {
+    emit("notify", `That box covers ${paths.length} files — narrow it or switch to Folders.`);
+    return;
+  }
+  selection.addMany(props.rootId, paths);
 }
 
 /**
@@ -630,7 +941,7 @@ function emitFocus(): void {
 
 <template>
   <div ref="wrapperRef" class="map-wrapper">
-    <canvas ref="canvasRef"></canvas>
+    <canvas ref="canvasRef" :class="{ 'marquee-cursor': (props.tool ?? 'navigate') === 'marquee' }"></canvas>
   </div>
 </template>
 
@@ -645,5 +956,9 @@ function emitFocus(): void {
 canvas {
   display: block;
   cursor: pointer;
+}
+
+canvas.marquee-cursor {
+  cursor: crosshair;
 }
 </style>

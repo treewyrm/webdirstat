@@ -3,8 +3,10 @@ import { computed } from "vue";
 import type { TreeChild } from "@webdirstat/shared";
 import { File, Folder, Link2, Maximize2 } from "@lucide/vue";
 import { useByteFormat } from "../composables/useDisplaySettings";
+import { useSelection } from "../composables/useSelection";
 
 const formatBytes = useByteFormat();
+const selection = useSelection();
 
 /** Max rows the pane renders before folding the rest into one summary row (feature 0015). */
 const ROW_CAP = 50;
@@ -13,12 +15,33 @@ const ROW_CAP = 50;
  * Size-sorted children of the focused directory; clicking a row selects it.
  * `omittedTail` is the map's remainder past its fetch cap (count + summed bytes),
  * plumbed through so the pane's "… X more" row reports it instead of dropping it.
+ * `rootId` + `basePath` (the focused directory's root-relative path) let each row read
+ * and write the shared, path-keyed selection set (feature 0019).
  */
 const props = defineProps<{
   children: TreeChild[];
   totalSize: number;
   omittedTail?: { count: number; bytes: number } | null;
+  rootId: string;
+  basePath: string;
 }>();
+
+/** Root-relative path of a child, the key it selects under. */
+function pathOf(child: TreeChild): string {
+  return props.basePath ? `${props.basePath}/${child.name}` : child.name;
+}
+/** A row is checked when it's an exact mark or subsumed by a marked ancestor. */
+function isChecked(child: TreeChild): boolean {
+  return selection.isCovered(props.rootId, pathOf(child));
+}
+/** Subsumed-by-ancestor rows are checked but locked — un-marking would fracture a folder (v2). */
+function isLocked(child: TreeChild): boolean {
+  const path = pathOf(child);
+  return selection.isCovered(props.rootId, path) && !selection.has(props.rootId, path);
+}
+function toggleMark(child: TreeChild): void {
+  selection.toggle(props.rootId, pathOf(child));
+}
 const emit = defineEmits<{
   select: [child: TreeChild];
   /** Scope the map to this directory (feature 0016) — button click or shift-click a row. */
@@ -72,6 +95,14 @@ function percentOfTotal(node: TreeChild): number {
       @mouseleave="emit('hover', null)"
     >
       <div class="bar" :style="{ width: percentOfTotal(child) + '%' }"></div>
+      <input
+        class="mark"
+        type="checkbox"
+        :checked="isChecked(child)"
+        :disabled="isLocked(child)"
+        :title="isLocked(child) ? 'Covered by a marked parent folder' : 'Mark for export'"
+        @click.stop="toggleMark(child)"
+      />
       <component :is="iconForKind(child.kind)" class="icon" :size="14" aria-hidden="true" />
       <span class="name" :title="child.name">{{ child.name }}</span>
       <span class="size">{{ formatBytes(child.size) }}</span>
@@ -104,7 +135,7 @@ function percentOfTotal(node: TreeChild): number {
 .list-row {
   position: relative;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto auto 1fr auto;
   gap: 0.4rem;
   align-items: center;
   padding: 0.35rem 0.6rem;
@@ -126,11 +157,24 @@ function percentOfTotal(node: TreeChild): number {
   z-index: 0;
 }
 
+.list-row .mark,
 .list-row .icon,
 .list-row .name,
 .list-row .size {
   position: relative;
   z-index: 1;
+}
+
+.list-row .mark {
+  margin: 0;
+  cursor: pointer;
+  /* Dim until the row (or the box) is hovered, so unmarked rows stay visually quiet. */
+  opacity: 0.35;
+}
+
+.list-row .mark:checked,
+.list-row:hover .mark {
+  opacity: 1;
 }
 
 .list-row .icon {

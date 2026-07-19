@@ -38,8 +38,12 @@ surface (canvas, file-list, later search) writes into.
 
 ## The toolbar
 
-A compact control strip over the canvas (placement TBD — a floating top-left/top-right
-group over the map, must not obscure content). It hosts, grouped:
+A control strip **docked above the view**, spanning the map's own column (not the
+app-wide header, and not floating over the canvas): the treemap now lives in a `.view`
+flex-column that owns `[TileToolbar.vue](../../client/src/components/TileToolbar.vue)`
+plus the map, so a future non-treemap view drops into the same slot with its own strip.
+Docking above (rather than floating over) keeps it from obscuring content at any zoom.
+It hosts, grouped:
 
 1. **Interaction tool (mutually exclusive):**
    - **Navigate** (cursor icon) — *default.* Drag pans, wheel zooms, plain-click
@@ -174,9 +178,12 @@ doing. Not a modifier side-effect.
   leaves → thousands of export lines. There clearly needs to be an **upper limit**, but
   the exact behavior is unsettled: a hard cap, a soft warning with a "switch to
   Folders?" nudge, auto-promotion to the enclosing folder past a threshold, or
-  something else. **Flagged, not decided.**
-- **Toolbar placement / responsiveness** — where it floats without obscuring the map,
-  and how it collapses on narrow viewports.
+  something else. **Flagged, not decided.** *Interim:* the implementation uses a hard
+  cap (`FILES_MARQUEE_CAP = 500`) that **refuses** an over-cap Files-mode add with a
+  transient notice, as a safe placeholder until this is settled.
+- ~~**Toolbar placement**~~ — **settled:** a strip docked above the view column (see
+  "The toolbar"), not a floating group. Responsiveness on narrow viewports (how the
+  groups wrap/collapse) is still open.
 - **Whether the color controls fully leave the Settings modal** or are mirrored in both
   (both bind the same state, so either is safe — a UX call, not a correctness one).
 

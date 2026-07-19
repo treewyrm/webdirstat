@@ -13,6 +13,7 @@ import {
 import type { WorldNode } from "./treemap/layout";
 import { AGE_RAMP, type AgeBounds } from "./utils/color";
 import { useByteFormat, useDisplaySettings } from "./composables/useDisplaySettings";
+import { useSelection } from "./composables/useSelection";
 import { useAuth } from "./composables/useAuth";
 import MapTreemap from "./components/MapTreemap.vue";
 import TileToolbar, { type TargetMode, type Tool } from "./components/TileToolbar.vue";
@@ -37,13 +38,48 @@ type SideTab = "files" | "types" | "search";
 const activeTab = ref<SideTab>("files");
 
 /**
- * Tileview toolbar state (feature 0019, prototype). The interaction tool and the
- * selection target both live here so they can later drive the canvas; the selection
- * set they feed isn't built yet, so the count is a placeholder.
+ * Tileview toolbar state (feature 0019). The interaction tool and the selection target
+ * drive the canvas; the selection set they feed is the shared `useSelection` store,
+ * keyed by the selected root.
  */
 const tool = ref<Tool>("navigate");
 const targetMode = ref<TargetMode>("files");
-const selectionCount = ref(0);
+const selection = useSelection();
+const selectionCount = computed(() => selection.count(selectedRootId.value));
+/** Transient selection message (e.g. the Files-mode marquee bulk-cap refusal). */
+const selectionNotice = ref<string | null>(null);
+let selectionNoticeTimer: ReturnType<typeof setTimeout> | null = null;
+function notify(message: string): void {
+  selectionNotice.value = message;
+  if (selectionNoticeTimer) clearTimeout(selectionNoticeTimer);
+  selectionNoticeTimer = setTimeout(() => (selectionNotice.value = null), 4000);
+}
+
+/** The marked paths, newline-joined — the export payload (format refined by feature 0006). */
+function selectionText(): string {
+  return selection.marksFor(selectedRootId.value).join("\n");
+}
+async function copySelection(): Promise<void> {
+  const text = selectionText();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    notify(`Copied ${selectionCount.value} path${selectionCount.value === 1 ? "" : "s"} to the clipboard.`);
+  } catch {
+    notify("Couldn't access the clipboard.");
+  }
+}
+function saveSelection(): void {
+  const text = selectionText();
+  if (!text) return;
+  const blob = new Blob([`${text}\n`], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${rootLabel.value || "selection"}-paths.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 const { settings } = useDisplaySettings();
 const formatBytes = useByteFormat();
@@ -329,6 +365,8 @@ function revealResult(result: SearchResult): void {
             :children="focusChildren"
             :total-size="focusSize"
             :omitted-tail="focusOmittedTail"
+            :root-id="selectedRootId"
+            :base-path="focusPath"
             @select="flyToChild"
             @scope="scopeChild"
             @hover="(id) => (highlightedId = id)"
@@ -354,9 +392,9 @@ function revealResult(result: SearchResult): void {
           v-model:tool="tool"
           v-model:target-mode="targetMode"
           :selection-count="selectionCount"
-          @clear="selectionCount = 0"
-          @copy="() => {}"
-          @save="() => {}"
+          @clear="selection.clear(selectedRootId)"
+          @copy="copySelection"
+          @save="saveSelection"
         />
         <section class="treemap-pane">
         <MapTreemap
@@ -365,11 +403,14 @@ function revealResult(result: SearchResult): void {
           :seed="seed"
           :base-path="viewRoot"
           :highlight-id="highlightedId"
+          :tool="tool"
+          :target-mode="targetMode"
           @focus="onFocus"
           @hover="(node) => (hoveredNode = node)"
           @stale="loadRoot"
           @scope="scopeTo"
           @agebounds="(b) => (ageBounds = b)"
+          @notify="notify"
         />
         <div v-if="settings.colorMode === 'age' && ageBounds" class="age-legend">
           <span>{{ formatDate(ageBounds.min) }}</span>
@@ -381,7 +422,8 @@ function revealResult(result: SearchResult): void {
           {{ settings.hoverFullPath ? hoveredNode.path || hoveredNode.name : hoveredNode.name }} — {{ formatBytes(hoveredNode.size) }}
           <template v-if="hoveredNode.error">({{ hoveredNode.error }})</template>
         </div>
-        <div class="hint">scroll to zoom · drag to pan · click a folder to fly in</div>
+        <div v-if="selectionNotice" class="selection-notice">{{ selectionNotice }}</div>
+        <div class="hint">{{ tool === "marquee" ? "drag to select · space-drag to pan · alt-drag to subtract" : "scroll to zoom · drag to pan · click to mark" }}</div>
         </section>
       </div>
     </main>
@@ -540,6 +582,21 @@ function revealResult(result: SearchResult): void {
   border-radius: 4px;
   font-size: 0.8rem;
   pointer-events: none;
+}
+
+.selection-notice {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--tooltip-bg);
+  color: var(--tooltip-fg);
+  padding: 0.4rem 0.7rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  pointer-events: none;
+  max-width: 80%;
+  text-align: center;
 }
 
 .hint {
