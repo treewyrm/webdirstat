@@ -48,8 +48,13 @@ It hosts, grouped:
 1. **Interaction tool (mutually exclusive):**
    - **Navigate** (cursor icon) — *default.* Drag pans, wheel zooms, plain-click
      toggles a single target into/out of the selection.
-   - **Marquee** (area icon) — drag draws a selection box; wheel still zooms; **pan
-     relocates to space-drag** (the drawing-app convention) since drag is now the box.
+   - **Marquee — Enclose** (dashed-box icon) — drag draws a selection box that grabs
+     only tiles it **fully covers**; wheel still zooms; **pan relocates to space-drag**
+     (the drawing-app convention) since drag is now the box.
+   - **Marquee — Touch** (overlapping-box icon) — same box gesture, but grabs **any tile
+     it overlaps** (crossing selection). Folders that wholly *wrap* the box are treated
+     as ancestors of the selection and descended into, not grabbed, so a sloppy drag
+     picks the tiles it pokes into rather than the enclosing folder.
 2. **Selection target (mutually exclusive) — a two-button, icon-only segmented
    control** (file icon | folder icon), active one visibly highlighted so it reads as
    a choice *between the two*. Governs what the canvas click/marquee targets.
@@ -74,15 +79,19 @@ Modal tools are the **primary, discoverable** path; the modifier gestures are ke
 | Tool | Drag | Alt-drag | Plain-click | Wheel |
 |---|---|---|---|---|
 | **Navigate** (default) | Pan | *(accel.)* subtract-marquee | Toggle one target | Zoom |
-| **Marquee** | Add-marquee | Subtract-marquee | Toggle one target | Zoom |
+| **Marquee — Enclose** | Add-marquee (full-cover) | Subtract-marquee | Toggle one target | Zoom |
+| **Marquee — Touch** | Add-marquee (any-overlap) | Subtract-marquee | Toggle one target | Zoom |
 
 - In **Navigate** mode, **shift-drag** is the accelerator for add-marquee (so you can
-  lasso without leaving the cursor tool); **alt-drag** subtracts. In **Marquee** mode
-  those are the base gestures (plain-drag adds, alt-drag subtracts) and **pan is
-  space-drag**.
+  lasso without leaving the cursor tool); **alt-drag** subtracts. In either **Marquee**
+  mode those are the base gestures (plain-drag adds, alt-drag subtracts) and **pan is
+  space-drag**. Navigate's accelerator marquee uses **Enclose** hit-testing.
 - **No "replace" marquee**, ever — the set is persistent and accretes across a cleanup
   tour, so a silent wipe is a footgun. "Start over" is the explicit **Clear** button.
-- **Full-containment**, not intersection — grazing a neighbor shouldn't grab it.
+- **Two hit-test modes, one per marquee tool:** **Enclose** (default) grabs only
+  fully-covered tiles — grazing a neighbor shouldn't grab it; **Touch** grabs any
+  overlapped tile for fast, sloppy selection. Both apply to Files and Folders targets
+  alike, and both keep the same subsumption/undershoot behavior below.
 - **Shift-click stays Scope** (feature 0016), distinct from shift-*drag*; d3 already
   splits click vs. drag on a move threshold.
 - **Live preview during a drag:** additions wash in the accent; subtractions show a
@@ -192,12 +201,13 @@ doing. Not a modifier side-effect.
 **Decided** for the selection model and toolbar shape; feature stays **Proposed**
 overall pending the Files-mode bulk cap and toolbar-placement details.
 
-- A **toolbar** over the canvas with: Navigate/Marquee tool switch (modal; pan →
-  space-drag in Marquee), Files/Folders target toggle (icon two-button, **default
-  Files**, persisted), relocated color-mode + shaded controls, and selection count +
-  Clear + Export.
+- A **toolbar** over the canvas with: Navigate / Marquee-Enclose / Marquee-Touch tool
+  switch (modal; pan → space-drag in either Marquee), Files/Folders target toggle (icon
+  two-button, **default Files**, persisted), relocated color-mode + shaded controls, and
+  selection count + Clear + Export.
 - **Modal tools primary, modifier gestures kept as accelerators** (shift-drag add /
-  alt-drag subtract in Navigate too). **No replace**, **full-containment**, live
+  alt-drag subtract in Navigate too, using Enclose hit-testing). **No replace**;
+  **two hit-test modes** — Enclose (full-cover, default) and Touch (any-overlap); live
   preview.
 - A **path-keyed, `localStorage`-persisted, heterogeneous** selection set; directories
   are one subsuming member; no auto-prune of vanished paths.

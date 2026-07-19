@@ -52,6 +52,14 @@ const emit = defineEmits<{
 }>();
 
 const tool = () => props.tool ?? "navigate";
+/** Either marquee tool is active (vs. Navigate) — gates the box gesture, cursor, space-pan. */
+const isMarquee = () => tool() !== "navigate";
+/**
+ * How the marquee hit-tests tiles (feature 0019): `contain` grabs only tiles the box
+ * fully encloses; `touch` grabs any tile the box overlaps. Only the dedicated
+ * `marquee-touch` tool is touch; Navigate's shift-drag marquee stays contain.
+ */
+const hitMode = (): "contain" | "touch" => (tool() === "marquee-touch" ? "touch" : "contain");
 const targetMode = () => props.targetMode ?? "files";
 /** Files-mode marquee upper bound (feature 0019, open question): refuse rather than mark thousands. */
 const FILES_MARQUEE_CAP = 500;
@@ -157,7 +165,7 @@ function onKey(event: KeyboardEvent): void {
   if (event.code !== "Space") return;
   // Space pans in Marquee mode; swallow its default (page scroll) only while relevant.
   spaceDown = event.type === "keydown";
-  if (tool() === "marquee") event.preventDefault();
+  if (isMarquee()) event.preventDefault();
 }
 
 // Reseed whenever the root slice identity changes (new root or new generation).
@@ -635,7 +643,7 @@ function onClick(event: MouseEvent): void {
 function marqueeModeFor(event: MouseEvent): "add" | "subtract" | null {
   if (event.button !== 0) return null;
   if (event.altKey) return "subtract";
-  if (tool() === "marquee") return spaceDown ? null : "add";
+  if (isMarquee()) return spaceDown ? null : "add";
   return event.shiftKey ? "add" : null; // Navigate: plain-drag pans
 }
 
@@ -698,28 +706,38 @@ function intersects(node: WorldNode, box: Rect): boolean {
 }
 
 /**
- * The laid-out nodes a marquee (current mode) would act on. Files mode collects
- * fully-contained leaves; Folders mode collects fully-contained directories, not
- * descending into a captured folder (subsumption). Used for both the live preview and
- * the commit, so they can't drift.
+ * The laid-out nodes a marquee (current mode) would act on. The active tool's
+ * {@link hitMode} decides the predicate: `contain` grabs only tiles the box fully
+ * encloses; `touch` grabs any tile the box overlaps. Folders subsume (a captured folder
+ * isn't descended into); a `touch` box that wholly *wraps* a folder is treated as that
+ * folder being an ancestor of the selection — we descend so the box's own child tiles
+ * are what get grabbed, not the whole enclosing folder. Used for both the live preview
+ * and the commit, so they can't drift.
  */
 function collectMarqueeTargets(mode: "add" | "subtract"): WorldNode[] {
   if (!worldRoot || !marquee) return [];
   const box = marqueeWorldRect();
   const out: WorldNode[] = [];
   const folders = targetMode() === "folders";
+  const touch = hitMode() === "touch";
 
   const walk = (node: WorldNode): void => {
     if (!intersects(node, box)) return;
     if (folders) {
-      if (node.kind === "directory" && node.depth > 0 && rectContains(box, node)) {
-        // subtract only touches existing marks; add takes any contained folder
+      // touch: grab any folder the box overlaps, except one that wholly wraps the box
+      // (an ancestor of the selection) — descend into it instead. contain: full enclose.
+      const grab = node.kind === "directory" && node.depth > 0 && (touch ? !rectContains(node, box) : rectContains(box, node));
+      if (grab) {
+        // subtract only touches existing marks; add takes any grabbed folder
         if (mode === "add" || selection.has(props.rootId, node.path)) out.push(node);
         return; // subsume: don't descend into a captured folder
       }
-    } else if ((node.kind === "file" || node.kind === "symlink") && rectContains(box, node)) {
-      if (mode === "add" || selection.has(props.rootId, node.path)) out.push(node);
-      return;
+    } else if (node.kind === "file" || node.kind === "symlink") {
+      // touch: any overlap (the intersects gate above already proved it). contain: enclose.
+      if (touch || rectContains(box, node)) {
+        if (mode === "add" || selection.has(props.rootId, node.path)) out.push(node);
+        return;
+      }
     }
     if (node.children) for (const child of node.children) walk(child);
   };
@@ -941,7 +959,7 @@ function emitFocus(): void {
 
 <template>
   <div ref="wrapperRef" class="map-wrapper">
-    <canvas ref="canvasRef" :class="{ 'marquee-cursor': (props.tool ?? 'navigate') === 'marquee' }"></canvas>
+    <canvas ref="canvasRef" :class="{ 'marquee-cursor': (props.tool ?? 'navigate') !== 'navigate' }"></canvas>
   </div>
 </template>
 

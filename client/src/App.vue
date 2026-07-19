@@ -423,7 +423,7 @@ function revealResult(result: SearchResult): void {
           <template v-if="hoveredNode.error">({{ hoveredNode.error }})</template>
         </div>
         <div v-if="selectionNotice" class="selection-notice">{{ selectionNotice }}</div>
-        <div class="hint">{{ tool === "marquee" ? "drag to select · space-drag to pan · alt-drag to subtract" : "scroll to zoom · drag to pan · click to mark" }}</div>
+        <div class="hint">{{ tool !== "navigate" ? "drag to select · space-drag to pan · alt-drag to subtract" : "scroll to zoom · drag to pan · click to mark" }}</div>
         </section>
       </div>
     </main>

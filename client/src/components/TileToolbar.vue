@@ -16,8 +16,12 @@ import { useDisplaySettings } from "../composables/useDisplaySettings";
  * placeholder and the export buttons are inert.
  */
 
-/** Canvas interaction tool — Navigate pans/clicks, Marquee drags a selection box. */
-export type Tool = "navigate" | "marquee";
+/**
+ * Canvas interaction tool — Navigate pans/clicks; the two marquee tools each drag a
+ * selection box but hit-test differently: `marquee` (Enclose) grabs only tiles the box
+ * fully covers, `marquee-touch` (Touch) grabs any tile the box overlaps.
+ */
+export type Tool = "navigate" | "marquee" | "marquee-touch";
 /** What a canvas click/marquee targets. */
 export type TargetMode = "files" | "folders";
 
@@ -66,7 +70,7 @@ const { settings } = useDisplaySettings();
         type="button"
         :class="{ active: props.tool === 'marquee' }"
         :aria-pressed="props.tool === 'marquee'"
-        title="Marquee — drag to select a box (space-drag pans)"
+        title="Marquee (Enclose) — grabs only tiles the box fully covers (space-drag pans)"
         @click="emit('update:tool', 'marquee')"
       >
         <svg viewBox="0 0 16 16" aria-hidden="true" width="15" height="15">
@@ -81,8 +85,32 @@ const { settings } = useDisplaySettings();
             stroke-width="1.2"
             stroke-dasharray="2.5 2"
           />
+          <rect x="5.5" y="5.5" width="5" height="5" rx="0.5" fill="currentColor" opacity="0.85" />
         </svg>
-        <span class="label">Marquee</span>
+        <span class="label">Enclose</span>
+      </button>
+      <button
+        type="button"
+        :class="{ active: props.tool === 'marquee-touch' }"
+        :aria-pressed="props.tool === 'marquee-touch'"
+        title="Marquee (Touch) — grabs any tile the box overlaps (space-drag pans)"
+        @click="emit('update:tool', 'marquee-touch')"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true" width="15" height="15">
+          <rect
+            x="1.5"
+            y="1.5"
+            width="9"
+            height="9"
+            rx="1"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.2"
+            stroke-dasharray="2.5 2"
+          />
+          <rect x="7" y="7" width="7.5" height="7.5" rx="0.5" fill="currentColor" opacity="0.85" />
+        </svg>
+        <span class="label">Touch</span>
       </button>
     </div>
 
