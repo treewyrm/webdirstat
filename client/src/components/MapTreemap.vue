@@ -19,7 +19,13 @@ import {
 
 const { settings } = useDisplaySettings();
 
-const props = defineProps<{ rootId: string; seed: TreeSlice; highlightId?: number | null }>();
+const props = defineProps<{
+  rootId: string;
+  seed: TreeSlice;
+  highlightId?: number | null;
+  /** The world root's path relative to the configured root; "" = full root (feature 0016). */
+  basePath?: string;
+}>();
 const emit = defineEmits<{
   focus: [
     {
@@ -32,6 +38,8 @@ const emit = defineEmits<{
   hover: [WorldNode | null];
   stale: [];
   agebounds: [AgeBounds | null];
+  /** Shift-click a solid directory tile: scope the view to it (root-relative path). */
+  scope: [string];
 }>();
 
 // LOD + interaction tuning.
@@ -157,7 +165,9 @@ function reseed(): void {
   // Same root+generation means the directory framing is identical (only interiors
   // re-fold, feature 0013), so retain the camera instead of snapping to identity and
   // throwing away the user's zoom. A real new root/generation resets the view.
-  const key = `${props.rootId}@${props.seed.generation}`;
+  // The scope base is part of the tree's identity: re-scoping to a subfolder is a
+  // genuinely different world, so it must reset the camera (not retain it).
+  const key = `${props.rootId}@${props.seed.generation}#${props.basePath ?? ""}`;
   const keepCamera = worldRoot != null && renderedKey === key;
   renderedKey = key;
   // New tree: forget the old mtime span before re-accumulating from this seed.
@@ -165,7 +175,7 @@ function reseed(): void {
   ageMax = -Infinity;
   emit("agebounds", null);
   if (!wrapperRef.value || cw === 0) measure();
-  worldRoot = makeRoot(props.seed.node, { x0: 0, y0: 0, x1: cw || 1, y1: ch || 1 });
+  worldRoot = makeRoot(props.seed.node, { x0: 0, y0: 0, x1: cw || 1, y1: ch || 1 }, props.basePath ?? "");
   layoutInto(worldRoot, props.seed.children, props.seed.omittedTail, props.seed.foldedSmall, settings.minSize);
   noteAgeBounds(props.seed.children);
   index = indexById(worldRoot);
@@ -433,7 +443,12 @@ function onClick(event: MouseEvent): void {
     unfold(node);
     return;
   }
-  if (node.kind === "directory" && node.childCount > 0) flyTo(node);
+  if (node.kind !== "directory" || node.childCount === 0) return;
+  // Shift-click a solid directory tile scopes the view to it (feature 0016); a plain
+  // click flies in. Only unexpanded directories are catchable — once expanded, the
+  // rect is covered by children — so this is a bonus accelerator, not the main path.
+  if (event.shiftKey) emit("scope", node.path);
+  else flyTo(node);
 }
 
 /**
@@ -492,16 +507,29 @@ async function prefetchSpine(node: WorldNode): Promise<void> {
   }
 }
 
+/**
+ * Strip the world root's `basePath` off an incoming **root-relative** path, yielding the
+ * segments to walk from the world root's children (feature 0016, Model A). Node paths
+ * (and every path-consuming pane) are root-relative, but the tree walk starts at the
+ * world root — which sits at `basePath` when the view is scoped — so the base prefix must
+ * come off first. A path not under the base (shouldn't happen for in-scope navigation) is
+ * walked as-is, best-effort.
+ */
+function debaseSegs(path: string): string[] {
+  const segs = path.split("/").filter(Boolean);
+  const base = (props.basePath ?? "").split("/").filter(Boolean);
+  for (let i = 0; i < base.length; i++) if (segs[i] !== base[i]) return segs;
+  return segs.slice(base.length);
+}
+
 /** Flies to the node at a relative path, if it is present in the laid-out tree. */
 function flyToPath(path: string): void {
   if (!worldRoot) return;
   let node: WorldNode = worldRoot;
-  if (path) {
-    for (const segment of path.split("/").filter(Boolean)) {
-      const child = node.children?.find((c) => c.kind !== "tail" && c.kind !== "small" && c.name === segment);
-      if (!child) break;
-      node = child;
-    }
+  for (const segment of debaseSegs(path)) {
+    const child = node.children?.find((c) => c.kind !== "tail" && c.kind !== "small" && c.name === segment);
+    if (!child) break;
+    node = child;
   }
   flyTo(node);
 }
@@ -533,7 +561,7 @@ function descendLoaded(dirSegs: string[]): { node: WorldNode; needLoad: boolean 
  */
 async function revealPath(filePath: string): Promise<void> {
   if (!worldRoot) return;
-  const dirSegs = filePath.split("/").filter(Boolean).slice(0, -1); // drop the file itself
+  const dirSegs = debaseSegs(filePath).slice(0, -1); // strip scope base, drop the file itself
   for (let guard = 0; guard <= dirSegs.length + 1; guard++) {
     const { node, needLoad } = descendLoaded(dirSegs);
     if (!needLoad) {

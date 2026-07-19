@@ -1,7 +1,6 @@
-# 0016 — Scope the map view to a subfolder
+ye# 0016 — Scope the map view to a subfolder
 
-Status: **Decided** — Model A (world root carries the subfolder as its base `path`).
-Not yet implemented.
+Status: **Done** — Model A (world root carries the subfolder as its base `path`).
 
 Bring back the ability (present in the original tech demo, dropped in the move to the
 camera-derived "Google-Maps" view) to open the treemap **rooted at a subfolder** of a
@@ -73,10 +72,10 @@ fixing the two walkers is the smaller, less error-prone change.
 
 ## Sub-decisions
 
-- **How the subfolder is chosen.** Natural triggers: a context action on a directory
-  tile / file-list row / breadcrumb ("Open as root" / "Focus here"), and a way back out
-  ("Up to full root"). The camera already has fly-to; this is a distinct *reseed*, not
-  a fly — the world rect resets to the subfolder.
+- **How the subfolder is chosen.** *(Settled — see Decision.)* Natural triggers: a
+  context action on a directory tile / file-list row / breadcrumb ("Open as root" /
+  "Focus here"), and a way back out ("Up to full root"). The camera already has fly-to;
+  this is a distinct *reseed*, not a fly — the world rect resets to the subfolder.
 - **Breadcrumbs above the scope root.** Show the ancestors up to the configured root
   (context, and the click target to zoom back out), or start the trail fresh at the
   scope root? Showing them — rendered but visually marked as "above scope" — preserves
@@ -140,5 +139,29 @@ Sub-decisions settled with A:
 - **Scope is a distinct reseed, not a fly** — the world rect resets to the subfolder.
   Fly-to stays "navigate within the map"; scope stays "redraw the map from here." Both
   affordances coexist and the UI should make the difference legible.
+- **How the subfolder is chosen — gestures.** **Single-click stays fly-to everywhere;**
+  scope is a separate, labeled affordance, never an overload of the same click. No
+  double-click for scope: the canvas is a `d3-zoom` surface (dblclick = zoom), the first
+  click would already have fired a fly, and the gesture is invisible. Surfaces, in order
+  of importance:
+  - **File-list rows** are the **primary scope-in surface** (DOM, and the rows *are* the
+    child directories you'd scope into): a hover-revealed ⤢ button per directory row,
+    plus **shift-click** as a power-user accelerator. Single-click still flies. The
+    button must be **small and icon-only** (no text label) so it doesn't eat the pane's
+    limited width — it appears only on row hover and sits inline at the row's trailing
+    edge.
+  - **Breadcrumbs** carry scope-*out*: clicking an **in-scope** crumb flies (it's in the
+    rendered world); clicking an **above-scope** crumb (dimmed) **rescopes outward** to
+    it — those nodes aren't in the current world, so fly can't reach them and rescope is
+    the only sensible action. The dimming already signals the behavior split, so no
+    modifier is needed. This gives the symmetry: **tiles/rows scope inward, breadcrumbs
+    scope outward.**
+  - **Scope the currently-focused folder** (not shown in its own file-list, and its map
+    tile is expanded/uncatchable): a small ⤢ "scope here" control at the end of the
+    breadcrumb trail (the current crumb).
+  - **Canvas tiles** need nothing mandatory. `hitTest` returns the deepest *visible*
+    tile, which is a file most of the time (scoping a file is meaningless) and only a
+    solid **unexpanded** directory tile occasionally — so a shift-click-to-scope there is
+    a free bonus, not a requirement. No canvas context menu.
 
 Implementation follows Model A under **Shape of the change** above.

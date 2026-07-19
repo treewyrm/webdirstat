@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { TreeChild } from "@webdirstat/shared";
-import { File, Folder, Link2 } from "@lucide/vue";
+import { File, Folder, Link2, Maximize2 } from "@lucide/vue";
 import { useByteFormat } from "../composables/useDisplaySettings";
 
 const formatBytes = useByteFormat();
@@ -21,9 +21,17 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   select: [child: TreeChild];
+  /** Scope the map to this directory (feature 0016) — button click or shift-click a row. */
+  scope: [child: TreeChild];
   /** The hovered row's node id (feature 0012, list → map highlight), or null on leave. */
   hover: [id: number | null];
 }>();
+
+/** A row click flies in; shift-click scopes the map to that folder (feature 0016). */
+function onRowClick(child: TreeChild, event: MouseEvent): void {
+  if (event.shiftKey && child.kind === "directory") emit("scope", child);
+  else emit("select", child);
+}
 
 /** The rows actually drawn: at most ROW_CAP, largest-first (children arrive sorted). */
 const visibleChildren = computed(() => props.children.slice(0, ROW_CAP));
@@ -59,7 +67,7 @@ function percentOfTotal(node: TreeChild): number {
       :key="child.id"
       class="list-row"
       :class="{ error: !!child.error, dir: child.kind === 'directory' }"
-      @click="emit('select', child)"
+      @click="onRowClick(child, $event)"
       @mouseenter="emit('hover', child.id)"
       @mouseleave="emit('hover', null)"
     >
@@ -67,6 +75,16 @@ function percentOfTotal(node: TreeChild): number {
       <component :is="iconForKind(child.kind)" class="icon" :size="14" aria-hidden="true" />
       <span class="name" :title="child.name">{{ child.name }}</span>
       <span class="size">{{ formatBytes(child.size) }}</span>
+      <!-- Scope-to-folder (feature 0016): icon-only, hover-revealed, so it costs no width. -->
+      <button
+        v-if="child.kind === 'directory'"
+        class="scope-btn"
+        title="Scope map to this folder"
+        aria-label="Scope map to this folder"
+        @click.stop="emit('scope', child)"
+      >
+        <Maximize2 :size="13" aria-hidden="true" />
+      </button>
     </div>
     <!-- The list analog of the map's omitted-tail tile: muted, dashed, inert. -->
     <div v-if="remainder" class="list-row more">
@@ -133,6 +151,41 @@ function percentOfTotal(node: TreeChild): number {
 .list-row .size {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Icon-only scope button (feature 0016): parked at the row's trailing edge, revealed
+ * only on row hover so it never claims layout width. It overlays the size chip while
+ * hovering (the size is re-readable the moment the pointer leaves).
+ */
+.list-row .scope-btn {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 0.4rem;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: var(--hover);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.list-row:hover .scope-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.list-row .scope-btn:hover {
+  color: var(--accent);
+  background: var(--border);
 }
 
 .list-row.error .name {
