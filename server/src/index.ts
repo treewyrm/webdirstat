@@ -1,5 +1,6 @@
 import { H3, onError, serve } from "h3";
 import { loadConfig } from "./config.ts";
+import { compressResponse } from "./http/compression.ts";
 import { logger } from "./logger.ts";
 import { Store } from "./store/db.ts";
 import { seedRootSettings } from "./store/settings.ts";
@@ -67,8 +68,21 @@ if (config.clientDist) {
 logger.info(`store: ${config.dbPath}`);
 logger.info(`roots: ${config.roots.map((r) => `${r.label}(${r.id})`).join(", ")}`);
 
+// Content-negotiated response compression (feature 0018), applied at the fully
+// normalized web-Response boundary by wrapping the app's fetch — uniform across the
+// JSON API, static SPA, and (excluded there) the SSE stream. `serve` reads
+// `app.fetch` after a `freezeApp` that only freezes config, so this reassignment sticks.
+const baseFetch = app.fetch.bind(app);
+app.fetch = (request: Parameters<typeof app.fetch>[0]): Response | Promise<Response> => {
+  const result = baseFetch(request);
+  return result instanceof Promise
+    ? result.then((response) => compressResponse(request, response, config.compression))
+    : compressResponse(request, result, config.compression);
+};
+
 serve(app, { port: config.port, hostname: config.host });
 logger.success(`listening on http://${config.host}:${config.port}`);
+if (config.compression.enabled) logger.info(`response compression: on (brotli q${config.compression.quality})`);
 
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
