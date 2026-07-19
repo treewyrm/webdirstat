@@ -23,7 +23,17 @@ export const EXTENSION_FAMILIES: Record<string, string> = {
   zip: "Archives", rar: "Archives", "7z": "Archives", tar: "Archives", gz: "Archives",
   bz2: "Archives", xz: "Archives", zst: "Archives",
   // Disk images
-  iso: "Disk images", dmg: "Disk images", img: "Disk images", vhd: "Disk images", vmdk: "Disk images",
+  iso: "Disk images", dmg: "Disk images", img: "Disk images", vhd: "Disk images", vhdx: "Disk images",
+  vmdk: "Disk images", vdi: "Disk images",
+  // Disk images — DAEMON Tools / optical-media formats
+  mdx: "Disk images", mds: "Disk images", mdf: "Disk images", // Media Descriptor (Alcohol/DAEMON)
+  ccd: "Disk images", sub: "Disk images", // CloneCD (paired with .img)
+  nrg: "Disk images", // Nero
+  cue: "Disk images", bin: "Disk images", // CDRWIN cue/bin
+  cdi: "Disk images", // DiscJuggler
+  b5t: "Disk images", b6t: "Disk images", bwt: "Disk images", // BlindWrite
+  pdi: "Disk images", // Instant CD/DVD
+  isz: "Disk images", // compressed ISO (UltraISO)
   // Documents
   pdf: "Documents", doc: "Documents", docx: "Documents", xls: "Documents", xlsx: "Documents",
   ppt: "Documents", pptx: "Documents", txt: "Documents", md: "Documents", rtf: "Documents",

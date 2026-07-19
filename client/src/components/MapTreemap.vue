@@ -4,9 +4,18 @@ import { select } from "d3-selection";
 import { zoom, zoomIdentity, type D3ZoomEvent, type ZoomBehavior, type ZoomTransform } from "d3-zoom";
 import type { TreeChild, TreeSlice } from "@webdirstat/shared";
 import { fetchTreeBatch } from "../api";
-import { fillFor, SMALL_TILE_COLOR, type AgeBounds } from "../utils/color";
+import { type AgeBounds } from "../utils/color";
 import { useDisplaySettings } from "../composables/useDisplaySettings";
 import { indexById, layoutInto, makeRoot, type WorldNode } from "../treemap/layout";
+import {
+  chunk,
+  drawDirFrame,
+  drawShimmer,
+  drawTile,
+  MAX_SCALE,
+  MIN_SCALE,
+  targetTransformFor,
+} from "./MapTreemap.draw";
 
 const { settings } = useDisplaySettings();
 
@@ -27,8 +36,6 @@ const emit = defineEmits<{
 
 // LOD + interaction tuning.
 const EXPAND_PX = 24; // min on-screen size before a directory shows its interior
-const LABEL_MIN_W = 44;
-const LABEL_MIN_H = 15;
 const PLAN_DEBOUNCE = 120;
 const FLY_MS = 450;
 const FLY_COVER = 1.03; // descend fills the viewport with the target (folder ⊇ viewport) so it becomes the current folder
@@ -72,7 +79,7 @@ let flyRaf: number | null = null;
 onMounted(() => {
   const canvas = canvasRef.value!;
   measure();
-  zoomBehavior = zoom<HTMLCanvasElement, unknown>().scaleExtent([0.05, 5_000_000]).on("zoom", onZoom);
+  zoomBehavior = zoom<HTMLCanvasElement, unknown>().scaleExtent([MIN_SCALE, MAX_SCALE]).on("zoom", onZoom);
   select(canvas).call(zoomBehavior);
   canvas.addEventListener("mousemove", onMouseMove);
   canvas.addEventListener("mouseleave", () => emit("hover", null));
@@ -258,143 +265,21 @@ function drawNode(ctx: CanvasRenderingContext2D, node: WorldNode): void {
   if (expandable && bigEnough) {
     node.touched = frame;
     if (node.children === null) {
+      drewShimmer = true;
       drawShimmer(ctx, sx0, sy0, w, h, node);
       return;
     }
     for (const child of node.children) drawNode(ctx, child);
-    drawDirFrame(ctx, sx0, sy0, w, h, node);
+    drawDirFrame(ctx, sx0, sy0, w, h, node, dpr);
     return;
   }
 
-  drawTile(ctx, sx0, sy0, w, h, node);
-}
-
-function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, node: WorldNode): void {
-  if (node.kind === "tail" || node.kind === "small") {
-    // Both synthetic aggregate tiles get a dashed neutral fill; the "small" fold
-    // (feature 0013) uses a distinct tone so it reads apart from the count-cap tail.
-    ctx.fillStyle = node.kind === "small" ? SMALL_TILE_COLOR : "#23272f";
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    ctx.setLineDash([3, 3]);
-    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    ctx.setLineDash([]);
-  } else {
-    ctx.fillStyle = fillFor(node, settings.colorMode, ageBounds());
-    ctx.fillRect(x, y, w, h);
-    // Cushion look: overlay a cached, color-independent light/shadow sprite (feature
-    // 0010). One drawImage per tile — cheaper than a per-tile gradient, and the base
-    // color still shows through the translucent overlay.
-    if (settings.shaded && w > 3 && h > 3) ctx.drawImage(cushionSprite(), x, y, w, h);
-    if (w > 3 && h > 3) drawTileBorder(ctx, x, y, w, h);
-  }
-  drawLabel(ctx, x, y, w, h, node);
-}
-
-/**
- * Separator drawn on a tile's top and left edges only. A boundary shared by two
- * adjacent tiles is thus painted once (by the lower/right neighbor), not twice —
- * so no doubled 2px seam. A directory's outer right/bottom edge is covered by its
- * `drawDirFrame` rect; the map's outermost edge is the canvas edge. Coordinates are
- * snapped to device pixels (`lineWidth = 1/dpr`) so each seam is one crisp device pixel.
- */
-function drawTileBorder(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
-  const lx = crisp(x);
-  const ty = crisp(y);
-  ctx.strokeStyle = "rgba(0,0,0,0.5)";
-  ctx.lineWidth = 1 / dpr;
-  ctx.beginPath();
-  ctx.moveTo(lx, y);
-  ctx.lineTo(lx, y + h); // left edge
-  ctx.moveTo(x, ty);
-  ctx.lineTo(x + w, ty); // top edge
-  ctx.stroke();
-}
-
-/** Snap a CSS-space coordinate to a device-pixel center so a 1/dpr line stays crisp. */
-function crisp(coord: number): number {
-  return (Math.round(coord * dpr) + 0.5) / dpr;
-}
-
-// Built once, reused for every shaded tile: a soft top-left specular highlight plus
-// all-edge darkening that reads as a raised pillow when stretched over any tile. It's
-// color-independent (pure white/black alpha), so it composes over the flat base fill
-// with source-over and needs no per-color cache.
-let cushionCanvas: HTMLCanvasElement | null = null;
-function cushionSprite(): HTMLCanvasElement {
-  if (cushionCanvas) return cushionCanvas;
-  const s = 128;
-  const c = document.createElement("canvas");
-  c.width = s;
-  c.height = s;
-  const g = c.getContext("2d")!;
-  // Edge shadow: dark toward the rim so the tile appears to bulge upward.
-  const edge = g.createRadialGradient(s / 2, s / 2, s * 0.12, s / 2, s / 2, s * 0.72);
-  edge.addColorStop(0, "rgba(0,0,0,0)");
-  edge.addColorStop(1, "rgba(0,0,0,0.32)");
-  g.fillStyle = edge;
-  g.fillRect(0, 0, s, s);
-  // Specular highlight offset toward a fixed top-left light.
-  const spec = g.createRadialGradient(s * 0.32, s * 0.3, 0, s * 0.32, s * 0.3, s * 0.62);
-  spec.addColorStop(0, "rgba(255,255,255,0.35)");
-  spec.addColorStop(1, "rgba(255,255,255,0)");
-  g.fillStyle = spec;
-  g.fillRect(0, 0, s, s);
-  cushionCanvas = c;
-  return cushionCanvas;
-}
-
-function drawDirFrame(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, node: WorldNode): void {
-  // Same top+left, device-pixel seam as leaf tiles, so a folder's border is a single
-  // crisp pixel too — no doubled seam against a sibling folder's frame or its own tiles.
-  drawTileBorder(ctx, x, y, w, h);
-  // A slim header strip with the folder name so nesting stays legible.
-  if (w > 60 && h > 22) {
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.fillRect(x + 1, y + 1, w - 2, 14);
-    drawLabel(ctx, x, y, w, 15, node, "rgba(255,255,255,0.85)");
-  }
-}
-
-function drawLabel(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  node: WorldNode,
-  color = "rgba(255,255,255,0.9)",
-): void {
-  if (w < LABEL_MIN_W || h < LABEL_MIN_H) return;
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x, y, w, h);
-  ctx.clip();
-  ctx.fillStyle = color;
-  ctx.font = "11px sans-serif";
-  ctx.fillText(node.name, x + 3, y + 11);
-  ctx.restore();
-}
-
-function drawShimmer(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, node: WorldNode): void {
-  drewShimmer = true;
-  ctx.fillStyle = "#2c313c";
-  ctx.fillRect(x, y, w, h);
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x, y, w, h);
-  ctx.clip();
-  // A translucent band panning left→right on a loop.
-  const span = w + 160;
-  const bandX = x - 80 + ((performance.now() / 900) % 1) * span;
-  const grad = ctx.createLinearGradient(bandX - 80, 0, bandX + 80, 0);
-  grad.addColorStop(0, "rgba(255,255,255,0)");
-  grad.addColorStop(0.5, "rgba(255,255,255,0.10)");
-  grad.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = grad;
-  ctx.fillRect(x, y, w, h);
-  ctx.restore();
-  drawLabel(ctx, x, y, w, h, node, "rgba(255,255,255,0.55)");
+  drawTile(ctx, sx0, sy0, w, h, node, {
+    colorMode: settings.colorMode,
+    ageBounds: ageBounds(),
+    shaded: settings.shaded,
+    dpr,
+  });
 }
 
 // --- lazy tile fetching ---
@@ -425,12 +310,6 @@ function collectNeeded(node: WorldNode, out: number[]): void {
     }
     for (const child of node.children) collectNeeded(child, out);
   }
-}
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
 }
 
 /** The fold threshold to fetch a directory with: 0 for one the user explicitly unfolded, else the global setting. */
@@ -577,21 +456,9 @@ function unfold(smallTile: WorldNode): void {
 
 // --- fly-to (camera animation) ---
 
-function targetTransformFor(node: WorldNode): ZoomTransform {
-  const nodeW = node.x1 - node.x0;
-  const nodeH = node.y1 - node.y0;
-  // Cover-fit (max ratio), not fit-inside (min): the target must fully *contain* the
-  // viewport to become the current folder in emitFocus. A hair of overscan (FLY_COVER)
-  // keeps float rounding from leaving the viewport a pixel outside the folder rect.
-  const k = Math.max(0.05, Math.min(5_000_000, FLY_COVER * Math.max(cw / nodeW, ch / nodeH)));
-  const cx = (node.x0 + node.x1) / 2;
-  const cy = (node.y0 + node.y1) / 2;
-  return zoomIdentity.translate(cw / 2 - k * cx, ch / 2 - k * cy).scale(k);
-}
-
 function flyTo(node: WorldNode): void {
   if (!zoomBehavior || !canvasRef.value) return;
-  const target = targetTransformFor(node);
+  const target = targetTransformFor(node, cw, ch, FLY_COVER);
   const start = transform;
   const startTime = performance.now();
   if (flyRaf) cancelAnimationFrame(flyRaf);
