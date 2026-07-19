@@ -15,9 +15,22 @@ Landed so far:
   [layout.test.ts](../../client/src/treemap/layout.test.ts).
 
 One wrinkle resolved: the client's `vue-tsc` pass is DOM-only (no `@types/node`), so
-client `*.test.ts` (which import `node:test`/`node:assert`) are **excluded** from the app
-tsconfig — they're typechecked/run under `tsx` instead. Server tests keep full `tsc`
-coverage since that workspace already has `@types/node`.
+client `*.test.ts` (which import `node:test`/`node:assert`) can't be typechecked by the app
+config, yet **excluding** them left the editor with no config for those files — the language
+server then reports "Cannot find module 'node:test'". Fixed with the `create-vue`-style
+**project-reference split** under `client/`:
+
+- [tsconfig.json](../../client/tsconfig.json) — a *solution* file (`files: []`) referencing
+  the two real projects. The editor discovers it and routes each file to its owner.
+- [tsconfig.app.json](../../client/tsconfig.app.json) — the browser bundle: DOM libs, **no
+  Node types**, excludes `*.test.ts`. Verified: app code referencing a Node global (e.g.
+  `process`) still fails typecheck, so nothing Node-only leaks into the bundle.
+- [tsconfig.test.json](../../client/tsconfig.test.json) — adds `@types/node` on top of the
+  DOM libs; owns the test files.
+
+Both are `composite`, so the client `typecheck`/`build` scripts run `vue-tsc --build`
+(build-mode is what makes references resolve). Server tests keep full `tsc` coverage since
+that workspace already has `@types/node`.
 
 The project has no tests and no working linter — [CLAUDE.md](../../CLAUDE.md) says
 `pnpm typecheck` is the only verification. That's fine for shape but catches nothing

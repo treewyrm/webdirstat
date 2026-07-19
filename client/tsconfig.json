@@ -1,12 +1,8 @@
 {
-  "extends": "../tsconfig.base.json",
-  "compilerOptions": {
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "jsx": "preserve",
-    "types": ["vite/client"]
-  },
-  "include": ["src"],
-  // Test files run under tsx/node:test (they import node: builtins the browser bundle
-  // must never see); typechecked there, not in the app's DOM-only vue-tsc pass.
-  "exclude": ["src/**/*.test.ts"]
+  // Solution file: no files of its own, just the two real projects. The editor discovers
+  // this (it's the nearest tsconfig.json) and routes each source file to the project that
+  // owns it — app files to tsconfig.app.json, *.test.ts to tsconfig.test.json — so test
+  // files resolve node:test/node:assert instead of erroring in an inferred project.
+  "files": [],
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.test.json" }]
 }

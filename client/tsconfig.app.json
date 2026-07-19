@@ -1,0 +1,14 @@
+{
+  // The browser bundle. DOM-only, no Node types — so app code can never lean on a Node
+  // global that isn't there at runtime. Excludes tests (they live in tsconfig.test.json).
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
+    "types": ["vite/client"]
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}
