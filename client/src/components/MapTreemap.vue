@@ -630,7 +630,7 @@ function onClick(event: MouseEvent): void {
   // Files mode marks the hit itself (a leaf, or a solid sub-folder tile); Folders mode
   // resolves up to the enclosing directory, so clicking a file tile marks its folder.
   const target = targetMode() === "folders" ? enclosingDir(chain) : node;
-  if (target && target.depth > 0) selection.toggle(props.rootId, target.path);
+  if (target && target.depth > 0) selection.toggle(props.rootId, target.path, target.size);
 }
 
 // --- marquee selection (feature 0019) ---
@@ -766,18 +766,17 @@ function commitMarquee(): void {
   if (!marquee) return;
   const mode = marquee.mode;
   const targets = collectMarqueeTargets(mode);
-  const paths = targets.map((n) => n.path);
   if (mode === "subtract") {
-    selection.removeMany(props.rootId, paths);
+    selection.removeMany(props.rootId, targets.map((n) => n.path));
     return;
   }
   // Files-mode bulk cap (open question, feature 0019): refuse a box that would mark a
   // flood of individual files rather than silently producing thousands of export lines.
-  if (targetMode() === "files" && paths.length > FILES_MARQUEE_CAP) {
-    emit("notify", `That box covers ${paths.length} files — narrow it or switch to Folders.`);
+  if (targetMode() === "files" && targets.length > FILES_MARQUEE_CAP) {
+    emit("notify", `That box covers ${targets.length} files — narrow it or switch to Folders.`);
     return;
   }
-  selection.addMany(props.rootId, paths);
+  selection.addMany(props.rootId, targets.map((n) => ({ path: n.path, size: n.size })));
 }
 
 /**

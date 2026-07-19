@@ -40,7 +40,7 @@ function isLocked(child: TreeChild): boolean {
   return selection.isCovered(props.rootId, path) && !selection.has(props.rootId, path);
 }
 function toggleMark(child: TreeChild): void {
-  selection.toggle(props.rootId, pathOf(child));
+  selection.toggle(props.rootId, pathOf(child), child.size);
 }
 const emit = defineEmits<{
   select: [child: TreeChild];

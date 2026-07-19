@@ -46,6 +46,7 @@ const tool = ref<Tool>("navigate");
 const targetMode = ref<TargetMode>("files");
 const selection = useSelection();
 const selectionCount = computed(() => selection.count(selectedRootId.value));
+const selectionSizeText = computed(() => formatBytes(selection.totalSize(selectedRootId.value)));
 /** Transient selection message (e.g. the Files-mode marquee bulk-cap refusal). */
 const selectionNotice = ref<string | null>(null);
 let selectionNoticeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -392,6 +393,7 @@ function revealResult(result: SearchResult): void {
           v-model:tool="tool"
           v-model:target-mode="targetMode"
           :selection-count="selectionCount"
+          :selection-size="selectionSizeText"
           @clear="selection.clear(selectedRootId)"
           @copy="copySelection"
           @save="saveSelection"

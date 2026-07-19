@@ -28,8 +28,10 @@ export type TargetMode = "files" | "folders";
 const props = defineProps<{
   tool: Tool;
   targetMode: TargetMode;
-  /** Number of marked items in the (not-yet-built) selection set. */
+  /** Number of marked items in the selection set. */
   selectionCount: number;
+  /** Pre-formatted total size (bytes) across the marks. */
+  selectionSize: string;
 }>();
 
 const emit = defineEmits<{
@@ -168,7 +170,7 @@ const { settings } = useDisplaySettings();
     <!-- Selection status + export -->
     <div class="group status">
       <span class="count" :class="{ empty: props.selectionCount === 0 }">
-        {{ props.selectionCount }} marked
+        {{ props.selectionCount }} marked<template v-if="props.selectionCount > 0"> · {{ props.selectionSize }}</template>
       </span>
       <button type="button" class="text" :disabled="props.selectionCount === 0" @click="emit('clear')">Clear</button>
       <button type="button" class="text" :disabled="props.selectionCount === 0" @click="emit('copy')">Copy</button>
