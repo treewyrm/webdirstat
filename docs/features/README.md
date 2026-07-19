@@ -9,8 +9,9 @@ full implementation plan.
 
 Filed:
 
-- [0001 — Password protection](0001-password-protection.md) — *Proposed.*
-  Independent of the scaling rework below.
+- [0001 — Password protection](0001-password-protection.md) — *Done.* Opt-in
+  shared-password gate (`PASSWORD` env): an `/api/**` guard, a session-cookie login
+  form, and a Log-out button. Independent of the scaling rework below.
 - [0002 — Pan/zoom treemap](0002-pan-zoom-treemap.md) — *Done.* Map-style
   navigation; built on the slice store from
   [issue 0002](../issues/0002-background-scanning-service.md) (its milestone 4).
@@ -44,5 +45,14 @@ Filed:
 - [0014 — Docker Hub & Unraid distribution](0014-docker-hub-unraid-distribution.md) —
   *Proposed.* Publish the image to Docker Hub + an Unraid Community Applications
   template for local-NAS install.
-- [0015 — Cap file-list rows](0015-cap-file-list-rows.md) — *Proposed.* Bound the
+- [0015 — Cap file-list rows](0015-cap-file-list-rows.md) — *Done.* Bound the
   Files pane's row count for very wide directories.
+- [0016 — Scope view to subfolder](0016-scope-view-to-subfolder.md) — *Done.* Open
+  the treemap rooted at a subfolder (Model A: the world root carries the subfolder as
+  its base `path`); a client-only view concern, no scanning involved.
+- [0017 — Testing](0017-testing.md) — *In progress.* `node:test` runner via `tsx`;
+  Tiers 1–3 landed (88 tests) over the pure/security-critical logic. Vue components
+  and HTTP/SSE end-to-end remain non-goals.
+- [0018 — Compact batch encoding](0018-compact-batch-encoding.md) — *Phase 1 Done*
+  (content-negotiated brotli/gzip response compression, ~10× on the batch tile query)
+  · *Phase 2 Proposed* (binary encoding, deferred).
