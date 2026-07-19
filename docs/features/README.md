@@ -23,7 +23,9 @@ Filed:
   over the walk-filled `type_rollup` table (whole-root) or an on-demand subtree
   aggregate (`?path=`) + a "By type" panel that tracks the focused folder with a
   Raw/Grouped family toggle; user-editable families deferred to 0007.
-- [0006 — Export paths](0006-export-paths.md) — *Proposed.*
+- [0006 — Export paths](0006-export-paths.md) — *Proposed.* Now scoped to just the
+  **export action** (clipboard / file, path form, format); the selection model that
+  feeds it moved to [0019](0019-tileview-toolbar-and-selection.md).
 - [0007 — Display settings pane](0007-display-settings-pane.md) — *Done.* Shipped
   as the ⚙ Settings modal with **Display** (client-local `localStorage` prefs) and
   **Scanning** (the migrated `ScheduleEditor`) categories; the Schedule ghost button
@@ -56,3 +58,8 @@ Filed:
 - [0018 — Compact batch encoding](0018-compact-batch-encoding.md) — *Phase 1 Done*
   (content-negotiated brotli/gzip response compression, ~10× on the batch tile query)
   · *Phase 2 Proposed* (binary encoding, deferred).
+- [0019 — Tileview toolbar & selection](0019-tileview-toolbar-and-selection.md) —
+  *Proposed* (selection model + toolbar shape decided). A canvas toolbar
+  (Navigate/Marquee tools, Files/Folders target toggle, relocated color controls,
+  selection count + Clear + Export) driving a path-keyed, `localStorage`-persisted
+  selection set; grew out of 0006 and feeds it.

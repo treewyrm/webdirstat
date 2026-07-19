@@ -13,7 +13,6 @@
     "build": "pnpm --filter ./client run build && pnpm --filter ./server run build",
     "start": "pnpm --filter ./server run start",
     "typecheck": "pnpm --filter ./shared --filter ./server --filter ./client run typecheck",
-    "lint": "pnpm --filter ./server --filter ./client run lint",
     "test": "node --import tsx --test \"{shared,server,client}/**/*.test.ts\"",
     "test:watch": "node --import tsx --test --watch \"{shared,server,client}/**/*.test.ts\"",
     "test:cov": "node --import tsx --test --experimental-test-coverage \"{shared,server,client}/**/*.test.ts\""

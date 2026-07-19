@@ -33,9 +33,10 @@ logic is being filled in — see [docs/features/0017-testing.md](docs/features/0
 what's tested and what's deferred (Vue components, HTTP/SSE end-to-end). Use `pnpm typecheck` +
 `pnpm test` for verification.
 
-There is **no working linter**. `pnpm lint` delegates to per-package `lint` scripts that don't exist
-(no ESLint config anywhere), so it fails. Debugging both dev servers together is set up in
-[.claude/launch.json](.claude/launch.json).
+There is **no linter** — a deliberate choice for a small solo project. `pnpm typecheck` (strict
+`tsc`/`vue-tsc`) is the real correctness gate; formatting is left to the editor (e.g. Prettier on
+save). Don't add ESLint/`pnpm lint` back without a reason. Debugging both dev servers together is
+set up in [.claude/launch.json](.claude/launch.json).
 
 ### Screenshotting the running app (headless)
 
