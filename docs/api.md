@@ -44,6 +44,16 @@ No read can serialize an unbounded slice of the tree. Two independent, non-overl
   Directories are never folded. A folded file is removed before the cap applies, so it can never
   also appear in `omittedTail` — the two buckets are disjoint.
 
+### Response compression (feature 0018)
+
+Every JSON/text response is content-negotiated compressed (brotli preferred, gzip fallback)
+when the client sends `Accept-Encoding` and the body clears a size threshold — transparent
+to the client, which just decodes it. Applied by wrapping `app.fetch`
+([http/compression.ts](../server/src/http/compression.ts)); the **SSE** stream
+(`GET /api/status`) is excluded (it must stay incremental). Tuned via `COMPRESSION`,
+`COMPRESSION_QUALITY`, `COMPRESSION_MIN_SIZE`. Matters most for `POST /api/tree/batch`,
+which is mostly repetitive JSON structure and compresses ~10×.
+
 ### Validation & errors
 
 Query strings and JSON bodies are validated with zod. Malformed input → **400**. Path/`root`

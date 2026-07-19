@@ -185,6 +185,14 @@ declares a separate writable `/db` volume alongside the read-only `/data` mounts
 `HISTORY_GENERATIONS`, and `SCAN_ENABLED` seed the per-root schedule defaults in
 [config.ts](server/src/config.ts); the UI overrides and persists them per root.
 
+Responses are content-negotiated **compressed** (feature 0018,
+[http/compression.ts](server/src/http/compression.ts)): brotli-preferred / gzip-fallback,
+applied by wrapping `app.fetch` in [index.ts](server/src/index.ts) — uniform over the JSON API
+and static SPA, with the SSE stream (`/api/status`) excluded. On by default (there's no proxy in
+the container to do it); `COMPRESSION=false` disables it, `COMPRESSION_QUALITY` (brotli 0–11,
+default 5) and `COMPRESSION_MIN_SIZE` (default 1024) tune it. Biggest win is the batch tile query
+(~10× on repetitive JSON) — see [docs/features/0018-compact-batch-encoding.md](docs/features/0018-compact-batch-encoding.md).
+
 `PASSWORD` (env, unset = open) enables the opt-in shared-password gate (feature 0001,
 [auth.ts](server/src/auth.ts) + [routes/auth.ts](server/src/routes/auth.ts)): an `/api/**`
 guard registered first in [index.ts](server/src/index.ts) that 401s unauthenticated API calls

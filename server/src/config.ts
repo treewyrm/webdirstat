@@ -2,6 +2,7 @@ import { realpath } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import type { RootSchedule, ScanRoot } from "@webdirstat/shared";
 import { type AuthConfig, generateSessionSecret } from "./auth.ts";
+import type { CompressionConfig } from "./http/compression.ts";
 import { logger } from "./logger.ts";
 import { parseDuration, parseWindows } from "./scan/schedule.ts";
 
@@ -103,6 +104,22 @@ export interface Config {
   scheduleDefaults: RootSchedule;
   /** Shared-password gate (feature 0001). `null` = disabled (no `PASSWORD` set). */
   auth: AuthConfig | null;
+  /** Content-negotiated response compression (feature 0018), env-seeded. */
+  compression: CompressionConfig;
+}
+
+/**
+ * Builds the response-compression config from env (feature 0018). On by default —
+ * responses ship uncompressed otherwise, and there's no reverse proxy in the
+ * container to do it for us. `COMPRESSION=false` disables it; `COMPRESSION_QUALITY`
+ * tunes brotli (0–11, clamped, default 5 — a CPU/ratio balance for dynamic bodies);
+ * `COMPRESSION_MIN_SIZE` is the byte threshold below which compression is skipped.
+ */
+function loadCompression(): CompressionConfig {
+  const disabled = process.env.COMPRESSION === "false" || process.env.COMPRESSION === "0";
+  const quality = Math.min(11, Math.max(0, Number(process.env.COMPRESSION_QUALITY) || 5));
+  const threshold = Math.max(0, Number(process.env.COMPRESSION_MIN_SIZE) || 1024);
+  return { enabled: !disabled, quality, threshold };
 }
 
 /**
@@ -163,5 +180,6 @@ export async function loadConfig(): Promise<Config> {
       historyGenerations,
     },
     auth: loadAuth(),
+    compression: loadCompression(),
   };
 }
