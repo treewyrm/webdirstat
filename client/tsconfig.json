@@ -5,5 +5,8 @@
     "jsx": "preserve",
     "types": ["vite/client"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Test files run under tsx/node:test (they import node: builtins the browser bundle
+  // must never see); typechecked there, not in the app's DOM-only vue-tsc pass.
+  "exclude": ["src/**/*.test.ts"]
 }

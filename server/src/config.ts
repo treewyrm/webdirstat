@@ -16,7 +16,7 @@ export interface ResolvedRoot extends ScanRoot {
   canonicalPath: string;
 }
 
-function slugify(label: string): string {
+export function slugify(label: string): string {
   return (
     label
       .trim()
@@ -26,8 +26,16 @@ function slugify(label: string): string {
   );
 }
 
+/** A parsed `ROOTS` entry before its path is resolved/realpathed against the filesystem. */
+export interface RootSpec {
+  id: string;
+  label: string;
+  path: string;
+}
+
 /**
- * Parses the `ROOTS` env var. Two accepted forms per comma-separated entry:
+ * The pure parse of the `ROOTS` env var — label/id/path only, no filesystem access.
+ * Two accepted forms per comma-separated entry:
  *   - labeled:   `Label=/path` — everything before the first `=` is the label.
  *   - unlabeled: `/path` — the display label is derived from the path's basename.
  * Falls back to a single root pointing at `/data`, matching a `-v host:/data` mount.
@@ -36,14 +44,15 @@ function slugify(label: string): string {
  * paths, so an unlabeled path containing `=`, or any path containing `,`, must be
  * given in the explicit `Label=/path` form. The label is derived from the basename
  * (never the raw path) so an unlabeled entry can't leak the host path to the client.
+ * Ids are slugified and de-duplicated so they never collide.
  */
-async function parseRoots(raw: string | undefined): Promise<ResolvedRoot[]> {
+export function parseRootSpecs(raw: string | undefined): RootSpec[] {
   const entries = (raw ?? "Data=/data")
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
 
-  const roots: ResolvedRoot[] = [];
+  const specs: RootSpec[] = [];
   const seenIds = new Set<string>();
 
   for (const entry of entries) {
@@ -57,6 +66,17 @@ async function parseRoots(raw: string | undefined): Promise<ResolvedRoot[]> {
     while (seenIds.has(id)) id = `${id}-2`;
     seenIds.add(id);
 
+    specs.push({ id, label: label || id, path });
+  }
+
+  return specs;
+}
+
+/** Resolves parsed specs to absolute + canonical (symlink-resolved) host paths. */
+async function parseRoots(raw: string | undefined): Promise<ResolvedRoot[]> {
+  const roots: ResolvedRoot[] = [];
+
+  for (const { id, label, path } of parseRootSpecs(raw)) {
     const absolutePath = resolve(path);
     let canonicalPath = absolutePath;
     try {
@@ -65,7 +85,7 @@ async function parseRoots(raw: string | undefined): Promise<ResolvedRoot[]> {
       logger.warn(`root "${label}" (${absolutePath}) does not exist yet`);
     }
 
-    roots.push({ id, label: label || id, absolutePath, canonicalPath });
+    roots.push({ id, label, absolutePath, canonicalPath });
   }
 
   return roots;

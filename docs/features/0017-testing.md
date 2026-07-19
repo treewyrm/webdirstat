@@ -1,6 +1,23 @@
 # 0017 — Testing
 
-Status: **In progress** — tooling wired up; Tier 1 (resolve-path, generations) landed.
+Status: **In progress** — tooling wired up; Tiers 1–3 landed (88 tests). Non-goals
+(Vue components, HTTP/SSE end-to-end) still open.
+
+Landed so far:
+- **Tier 1** — [resolve-path.test.ts](../../server/src/scan/resolve-path.test.ts),
+  [generations.test.ts](../../server/src/store/generations.test.ts).
+- **Tier 2** — [schedule.test.ts](../../server/src/scan/schedule.test.ts),
+  [config.test.ts](../../server/src/config.test.ts) (after extracting the pure
+  `parseRootSpecs`/`slugify` out of the FS-touching `loadConfig`),
+  [ext.test.ts](../../server/src/scan/ext.test.ts).
+- **Tier 3** — [color.test.ts](../../client/src/utils/color.test.ts),
+  [format.test.ts](../../client/src/utils/format.test.ts),
+  [layout.test.ts](../../client/src/treemap/layout.test.ts).
+
+One wrinkle resolved: the client's `vue-tsc` pass is DOM-only (no `@types/node`), so
+client `*.test.ts` (which import `node:test`/`node:assert`) are **excluded** from the app
+tsconfig — they're typechecked/run under `tsx` instead. Server tests keep full `tsc`
+coverage since that workspace already has `@types/node`.
 
 The project has no tests and no working linter — [CLAUDE.md](../../CLAUDE.md) says
 `pnpm typecheck` is the only verification. That's fine for shape but catches nothing
@@ -117,9 +134,12 @@ These import cleanly under `node:test` — no Vue, no jsdom:
 
 ## Open questions
 
-- One root `test` glob vs. per-workspace `test` scripts (mirroring `typecheck`)? Per-package
-  is more consistent with the existing script layout but means three invocations; a single
-  root glob is simpler to start. Lean: **single root glob now**, split later if needed.
-- Temp-DB helper location — a tiny `server/src/store/testing.ts` (make an in-memory store
-  with `schema.ts` applied) is worth extracting so store tests don't each rebuild it.
-- Coverage gate in CI, or run-only? Start run-only; a threshold invites gaming a young suite.
+- ~~One root `test` glob vs. per-workspace scripts?~~ **Decided: single root glob**
+  (`node --import tsx --test "{shared,server,client}/**/*.test.ts"`). Split later if needed.
+- Temp-DB helper — store tests currently open `Store.open(":memory:")` directly, which is
+  enough. Extract a `server/src/store/testing.ts` seeding helper only if node fixtures start
+  repeating across files.
+- Coverage gate in CI, or run-only? Start run-only (`pnpm test:cov` exists for local use); a
+  threshold invites gaming a young suite.
+- **CI**: `pnpm test` isn't wired into a CI workflow yet (no workflow exists in-repo). Add it
+  alongside `pnpm typecheck` when CI lands.
