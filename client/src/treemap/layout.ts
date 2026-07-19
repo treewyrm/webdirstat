@@ -44,10 +44,16 @@ interface LayoutItem {
   small?: FoldedSmall;
 }
 
-/** Creates the root world node filling the given world rect (interior unloaded). */
+/**
+ * Creates the root world node filling the given world rect (interior unloaded).
+ * `basePath` is the world root's own path relative to the configured root — `""` for
+ * the full root, or a subfolder when the view is scoped (feature 0016, Model A). Every
+ * descendant appends onto it, so node paths stay **root-relative** regardless of scope.
+ */
 export function makeRoot(
   node: { id: number; name: string; kind: NodeKind; size: number; childCount: number },
   rect: { x0: number; y0: number; x1: number; y1: number },
+  basePath = "",
 ): WorldNode {
   return {
     id: node.id,
@@ -55,7 +61,7 @@ export function makeRoot(
     kind: node.kind,
     size: node.size,
     childCount: node.childCount,
-    path: "",
+    path: basePath,
     depth: 0,
     ...rect,
     children: null,

@@ -45,6 +45,15 @@ const { required: authRequired, signOut } = useAuth();
 const seed = shallowRef<TreeSlice | null>(null);
 const generation = computed(() => seed.value?.generation ?? null);
 
+/**
+ * Scope anchor (feature 0016): the subpath the map is rooted at, relative to the
+ * configured root. "" = the full root. Drives `loadRoot`'s `fetchTree`, is passed to
+ * the map as its `basePath`, doubles as the stale-reseed anchor, and syncs to the URL.
+ */
+const viewRoot = ref<string>("");
+/** Transient notice, e.g. when a scoped folder vanished on rescan and we fell back. */
+const scopeNotice = ref<string | null>(null);
+
 /** Camera-derived focus (breadcrumbs + list pane) reported by the map. */
 const focusChain = shallowRef<Array<{ id: number; name: string; path: string }>>([]);
 const focusChildren = shallowRef<TreeChild[]>([]);
@@ -71,10 +80,46 @@ const globalScanning = computed(() => scanner.value.state.phase !== "idle");
 
 const focusPath = computed(() => focusChain.value.at(-1)?.path ?? "");
 
+const rootLabel = computed(() => roots.value.find((r) => r.id === selectedRootId.value)?.label ?? "/");
+
+/**
+ * The scope root's ancestors, up to and including the configured root (feature 0016).
+ * They sit *above* the world root — absent from the map's camera-derived `focusChain` —
+ * so we synthesize them from `viewRoot` to keep the way out visible. Clicking one
+ * re-scopes outward. The scope root itself is the map's `focusChain[0]`, so we stop one
+ * segment short of `viewRoot`.
+ */
+const aboveScopeCrumbs = computed(() => {
+  if (!viewRoot.value) return [];
+  const segs = viewRoot.value.split("/").filter(Boolean);
+  const crumbs = [{ name: rootLabel.value, path: "", aboveScope: true }];
+  let acc = "";
+  for (let i = 0; i < segs.length - 1; i++) {
+    acc = acc ? `${acc}/${segs[i]}` : segs[i]!;
+    crumbs.push({ name: segs[i]!, path: acc, aboveScope: true });
+  }
+  return crumbs;
+});
+
+/** The full breadcrumb trail: above-scope ancestors, then the camera-derived focus. */
+const crumbs = computed(() => [
+  ...aboveScopeCrumbs.value,
+  ...focusChain.value.map((c) => ({ ...c, aboveScope: false })),
+]);
+
 onMounted(async () => {
   try {
     roots.value = await fetchRoots();
-    if (roots.value.length > 0) selectedRootId.value = roots.value[0]!.id;
+    if (roots.value.length > 0) {
+      // Restore a scoped view from the URL (?root=…&at=…) so it survives refresh and is
+      // linkable (feature 0016); fall back to the first root, unscoped. viewRoot is set
+      // before selectedRootId so the reseed watch picks up the anchor on first load.
+      const params = new URLSearchParams(location.search);
+      const urlRoot = params.get("root");
+      const initial = roots.value.find((r) => r.id === urlRoot)?.id ?? roots.value[0]!.id;
+      if (urlRoot === initial) viewRoot.value = params.get("at") ?? "";
+      selectedRootId.value = initial;
+    }
   } catch (error) {
     scanError.value = error instanceof Error ? error.message : String(error);
   }
@@ -124,7 +169,7 @@ async function refreshRootStatus(): Promise<RootStatus | null> {
   }
 }
 
-/** (Re)seed the map from the selected root's live generation. */
+/** (Re)seed the map from the selected root's live generation, at the current scope anchor. */
 async function loadRoot(): Promise<void> {
   const rootId = selectedRootId.value;
   if (!rootId) return;
@@ -135,8 +180,17 @@ async function loadRoot(): Promise<void> {
   focusChildren.value = [];
   focusOmittedTail.value = null;
   try {
-    seed.value = await fetchTree(rootId, "", { minSize: settings.minSize });
+    seed.value = await fetchTree(rootId, viewRoot.value, { minSize: settings.minSize });
   } catch (error) {
+    // A 404 on a *scoped* read means the folder was removed/renamed by a rescan (the
+    // root itself was scanned) — fall back to the full root with a notice rather than
+    // an empty map (feature 0016). A 404 at the root is a genuine "not scanned yet".
+    if (error instanceof NotScannedError && viewRoot.value) {
+      scopeNotice.value = `"${viewRoot.value}" is no longer in this scan — showing the full root.`;
+      viewRoot.value = "";
+      syncUrl();
+      return void loadRoot();
+    }
     if (error instanceof NotScannedError) notScanned.value = true;
     else scanError.value = error instanceof Error ? error.message : String(error);
   }
@@ -170,6 +224,42 @@ function flyToChild(child: TreeChild): void {
   mapRef.value?.flyToPath(path);
 }
 
+/** Reflect the current root + scope anchor into the URL query (linkable, refresh-safe). */
+function syncUrl(): void {
+  const url = new URL(location.href);
+  if (viewRoot.value) {
+    url.searchParams.set("root", selectedRootId.value);
+    url.searchParams.set("at", viewRoot.value);
+  } else {
+    url.searchParams.delete("root");
+    url.searchParams.delete("at");
+  }
+  history.replaceState(null, "", url);
+}
+
+/** Scope the map to a subfolder (feature 0016) — a distinct reseed, not a camera fly. */
+function scopeTo(path: string): void {
+  const next = path.replace(/^\/+|\/+$/g, "");
+  if (next === viewRoot.value) return;
+  scopeNotice.value = null;
+  viewRoot.value = next;
+  syncUrl();
+  void loadRoot();
+}
+
+/** Scope to a directory child of the current focus (its path is root-relative). */
+function scopeChild(child: TreeChild): void {
+  if (child.kind !== "directory") return;
+  scopeTo(focusPath.value ? `${focusPath.value}/${child.name}` : child.name);
+}
+
+/** Switch the configured root; scope is per-root, so clear it before the reseed. */
+function onRootPick(id: string): void {
+  viewRoot.value = "";
+  syncUrl();
+  selectedRootId.value = id; // the watch below reseeds + refreshes status
+}
+
 /** A search hit: seed the spine to its folder, fly there, and highlight the file tile. */
 function revealResult(result: SearchResult): void {
   highlightedId.value = result.id;
@@ -181,7 +271,11 @@ function revealResult(result: SearchResult): void {
   <div class="app">
     <header class="toolbar">
       <h1>WebDirStat</h1>
-      <select v-model="selectedRootId" :disabled="roots.length === 0">
+      <select
+        :value="selectedRootId"
+        :disabled="roots.length === 0"
+        @change="onRootPick(($event.target as HTMLSelectElement).value)"
+      >
         <option v-for="root in roots" :key="root.id" :value="root.id">{{ root.label }}</option>
       </select>
       <button :disabled="!selectedRootId" @click="onStartStop">{{ globalScanning ? "Stop" : "Scan" }}</button>
@@ -203,7 +297,18 @@ function revealResult(result: SearchResult): void {
       @schedule-saved="refreshRootStatus"
     />
 
-    <Breadcrumbs :chain="focusChain" @navigate="(path) => mapRef?.flyToPath(path)" />
+    <Breadcrumbs
+      :chain="crumbs"
+      :can-scope-here="focusPath !== viewRoot"
+      @navigate="(path) => mapRef?.flyToPath(path)"
+      @rescope="scopeTo"
+      @scope-here="scopeTo(focusPath)"
+    />
+
+    <div v-if="scopeNotice" class="scope-notice">
+      {{ scopeNotice }}
+      <button class="ghost" @click="scopeNotice = null">Dismiss</button>
+    </div>
 
     <main v-if="seed" class="content">
       <div class="side">
@@ -219,6 +324,7 @@ function revealResult(result: SearchResult): void {
             :total-size="focusSize"
             :omitted-tail="focusOmittedTail"
             @select="flyToChild"
+            @scope="scopeChild"
             @hover="(id) => (highlightedId = id)"
           />
           <TypeList
@@ -242,10 +348,12 @@ function revealResult(result: SearchResult): void {
           ref="mapRef"
           :root-id="selectedRootId"
           :seed="seed"
+          :base-path="viewRoot"
           :highlight-id="highlightedId"
           @focus="onFocus"
           @hover="(node) => (hoveredNode = node)"
           @stale="loadRoot"
+          @scope="scopeTo"
           @agebounds="(b) => (ageBounds = b)"
         />
         <div v-if="settings.colorMode === 'age' && ageBounds" class="age-legend">
@@ -329,6 +437,17 @@ function revealResult(result: SearchResult): void {
 .age-legend em {
   font-style: normal;
   opacity: 0.7;
+}
+
+.scope-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 1rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  background: var(--hover);
+  border-bottom: 1px solid var(--border);
 }
 
 .content {

@@ -1,7 +1,6 @@
 ye# 0016 — Scope the map view to a subfolder
 
-Status: **Decided** — Model A (world root carries the subfolder as its base `path`).
-Not yet implemented.
+Status: **Done** — Model A (world root carries the subfolder as its base `path`).
 
 Bring back the ability (present in the original tech demo, dropped in the move to the
 camera-derived "Google-Maps" view) to open the treemap **rooted at a subfolder** of a
