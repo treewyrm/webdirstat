@@ -7,13 +7,15 @@ export interface Colorable {
   error?: string;
   /** Modification time, for the age color mode. */
   mtimeMs?: number;
+  /** Root-relative path, for the folder color mode. */
+  path?: string;
 }
 
 /** The neutral tone for the "small files" fold tile (feature 0013) — distinct from the tail tile. */
 export const SMALL_TILE_COLOR = "#2c3138";
 
-/** How tiles are colored: by extension identity (default) or by modification age. */
-export type ColorMode = "type" | "age";
+/** How tiles are colored: by extension identity (default), modification age, or containing folder. */
+export type ColorMode = "type" | "age" | "folder";
 
 /** [oldest, newest] mtime present in the visible tree, normalising the age ramp. */
 export interface AgeBounds {
@@ -112,14 +114,35 @@ export function colorByAge(mtimeMs: number | undefined, bounds: AgeBounds, now: 
   return sampleRamp(AGE_RAMP, t);
 }
 
+/** The root-relative path of the folder that directly contains `path` ("" is the root). */
+function parentFolder(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash >= 0 ? path.slice(0, slash) : "";
+}
+
+/**
+ * Color a node by the folder it lives in, so every tile in one directory shares a hue
+ * and folder boundaries read as solid blocks. A wide HSL hue spread (hashed off the
+ * containing folder's path) keeps adjacent folders distinct better than the 10-swatch
+ * palette would; the root's own children ("") all fall on one hue.
+ */
+export function colorByFolder(path: string): string {
+  const hue = hashString(parentFolder(path)) % 360;
+  return `hsl(${hue}, 42%, 46%)`;
+}
+
 /**
  * The tile fill for the active color mode. In **age** mode, plain files are colored
- * by mtime; directories/symlinks/other/tail and errored files keep their neutral
- * type tones. In **type** mode (or with no bounds yet), falls back to `colorFor`.
+ * by mtime; directories/symlinks/other/tail and errored files keep their neutral type
+ * tones. In **folder** mode, every non-errored tile is colored by its containing
+ * folder. In **type** mode (or with no bounds yet), falls back to `colorFor`.
  */
 export function fillFor(node: Colorable, mode: ColorMode, bounds: AgeBounds | null): string {
   if (mode === "age" && bounds && node.kind === "file" && !node.error) {
     return colorByAge(node.mtimeMs, bounds);
+  }
+  if (mode === "folder" && !node.error) {
+    return colorByFolder(node.path ?? "");
   }
   return colorFor(node);
 }

@@ -22,6 +22,7 @@ const { settings, reset } = useDisplaySettings();
       <select v-model="settings.colorMode">
         <option value="type">By type — extension</option>
         <option value="age">By age — modification time</option>
+        <option value="folder">By folder — containing directory</option>
       </select>
     </label>
 

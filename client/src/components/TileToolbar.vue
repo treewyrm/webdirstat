@@ -160,6 +160,7 @@ const { settings } = useDisplaySettings();
       <select v-model="settings.colorMode" title="Tile color mode" aria-label="Tile color mode">
         <option value="type">Color: Type</option>
         <option value="age">Color: Age</option>
+        <option value="folder">Color: Folder</option>
       </select>
       <label class="shaded" title="Shaded (cushion) tiles">
         <input v-model="settings.shaded" type="checkbox" />

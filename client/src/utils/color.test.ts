@@ -4,6 +4,7 @@ import {
   AGE_RAMP,
   type Colorable,
   colorByAge,
+  colorByFolder,
   colorFor,
   colorForExt,
   fillFor,
@@ -88,5 +89,19 @@ describe("fillFor", () => {
     const f = file("x.txt", { mtimeMs: 50 });
     assert.equal(fillFor(f, "type", bounds), colorFor(f));
     assert.equal(fillFor(f, "age", null), colorFor(f));
+  });
+
+  test("folder mode colors siblings by their shared containing folder", () => {
+    const a = file("a.txt", { path: "src/lib/a.txt" });
+    const b = file("b.txt", { path: "src/lib/b.txt" });
+    const other = file("c.txt", { path: "src/util/c.txt" });
+    assert.equal(fillFor(a, "folder", null), fillFor(b, "folder", null));
+    assert.notEqual(fillFor(a, "folder", null), fillFor(other, "folder", null));
+    assert.equal(fillFor(a, "folder", null), colorByFolder("src/lib/a.txt"));
+  });
+
+  test("folder mode leaves errored tiles on the error tone", () => {
+    const f = file("bad.txt", { error: "EACCES", path: "src/bad.txt" });
+    assert.equal(fillFor(f, "folder", null), colorFor(f));
   });
 });
