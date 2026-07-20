@@ -178,8 +178,20 @@ watch(() => settings.shaded, scheduleDraw);
 watch(() => props.highlightId, scheduleDraw);
 
 // The selection wash (feature 0019) is a pure overlay repaint; ops replace the marks
-// array on every real change, so this fires exactly when the wash needs redrawing.
-watch(() => selection.marksFor(props.rootId), scheduleDraw);
+// array on every real change, so this fires exactly when the wash needs redrawing. We
+// snapshot the marks into a plain Set here (not per draw): the wash walks the whole
+// laid-out tree every frame, and `selection.has` is an O(marks) scan over a *reactive*
+// proxy array — so reading it per node made each pan/zoom frame O(nodes x marks) with
+// proxy-getter overhead. The Set makes the per-node lookup O(1) and proxy-free.
+let markedPaths = new Set<string>();
+watch(
+  () => selection.marksFor(props.rootId),
+  (paths) => {
+    markedPaths = new Set(paths);
+    scheduleDraw();
+  },
+  { immediate: true },
+);
 
 // Type/Age color mode is also a pure repaint; re-emit bounds so the legend is ready.
 watch(
@@ -320,7 +332,7 @@ function screenRect(node: WorldNode): { x: number; y: number; w: number; h: numb
  * the list→map highlight (feature 0012) rather than a DOM layer.
  */
 function drawSelectionWash(ctx: CanvasRenderingContext2D, node: WorldNode, underMark: boolean): void {
-  const marked = underMark || (node.kind !== "tail" && node.kind !== "small" && selection.has(props.rootId, node.path));
+  const marked = underMark || (node.kind !== "tail" && node.kind !== "small" && markedPaths.has(node.path));
   if (marked) {
     const rect = screenRect(node);
     if (rect && rect.w >= 1 && rect.h >= 1) {
@@ -729,13 +741,13 @@ function collectMarqueeTargets(mode: "add" | "subtract"): WorldNode[] {
       const grab = node.kind === "directory" && node.depth > 0 && (touch ? !rectContains(node, box) : rectContains(box, node));
       if (grab) {
         // subtract only touches existing marks; add takes any grabbed folder
-        if (mode === "add" || selection.has(props.rootId, node.path)) out.push(node);
+        if (mode === "add" || markedPaths.has(node.path)) out.push(node);
         return; // subsume: don't descend into a captured folder
       }
     } else if (node.kind === "file" || node.kind === "symlink") {
       // touch: any overlap (the intersects gate above already proved it). contain: enclose.
       if (touch || rectContains(box, node)) {
-        if (mode === "add" || selection.has(props.rootId, node.path)) out.push(node);
+        if (mode === "add" || markedPaths.has(node.path)) out.push(node);
         return;
       }
     }
