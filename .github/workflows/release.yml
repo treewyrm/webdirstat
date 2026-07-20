@@ -22,7 +22,9 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Derives tags (latest, X.Y.Z, X.Y) and org.opencontainers.image.* labels.
+      # Derives tags (latest, X.Y.Z, X.Y) and org.opencontainers.image.* labels +
+      # annotations from the repo's own name/description/license: one source of
+      # truth, so image-config labels and manifest annotations always agree.
       - uses: docker/metadata-action@v5
         id: meta
         with:
@@ -31,10 +33,6 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
-          labels: |
-            org.opencontainers.image.title=WebDirStat
-            org.opencontainers.image.description=WinDirStat-style disk-usage visualizer for your NAS: interactive treemap with background scanning.
-            org.opencontainers.image.licenses=MIT
 
       - uses: docker/build-push-action@v6
         with:
@@ -43,5 +41,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -1,8 +1,10 @@
 # 0014 — Docker Hub image + Unraid Community Applications
 
-Status: **In progress** — publishing pipeline (multi-arch release workflow, OCI
-labels) and the PUID/PGID runtime have landed; remaining: push the first `v0.1.0`
-tag to publish, then author the Unraid CA template.
+Status: **In progress** — **v0.1.0 is published to Docker Hub** as
+`treewyrm/webdirstat` (multi-arch amd64+arm64; tags `0.1.0`, `0.1`, `latest`;
+verified pull + run + health). Publishing pipeline and PUID/PGID runtime have
+landed. Remaining: author the Unraid CA template (the last mile to one-click
+install).
 
 Related: [Dockerfile](../../Dockerfile) (the runtime image this ships),
 [config.ts](../../server/src/config.ts) (the env vars a template must expose),
@@ -23,9 +25,9 @@ feature is almost entirely **packaging, publishing, and defaults** — not app c
 
 ## What's missing today
 
-1. ~~**No published image.**~~ **CI added** ([`.github/workflows/release.yml`](../../.github/workflows/release.yml)):
-   a `v*` tag push builds and pushes multi-arch to Docker Hub. Still needs the
-   first tag (`v0.1.0`) pushed to actually publish.
+1. ~~**No published image.**~~ **Done** ([`.github/workflows/release.yml`](../../.github/workflows/release.yml)):
+   a `v*` tag push builds and pushes multi-arch to Docker Hub. `v0.1.0` is
+   published and verified (pulls, runs, `/api/health` 200).
 2. ~~**No multi-arch build.**~~ **Done** — the workflow builds `linux/amd64` +
    `linux/arm64` via QEMU + Buildx so the template "just works" on both.
 3. **No CA template.** Unraid CA needs an XML template (the `<Container>` schema)
@@ -105,9 +107,8 @@ submitted to the CA app feed. Must encode:
 
 ## Open questions
 
-- ~~**Registry namespace + image name**~~ **Resolved** — `treewyrm/webdirstat`;
-  the release workflow targets it. (Confirm the Hub repo exists and is public
-  before the first tag push.)
+- ~~**Registry namespace + image name**~~ **Resolved** — `treewyrm/webdirstat`,
+  public; v0.1.0 published there.
 - ~~**PUID/PGID vs. fixed uid 1000**~~ **Resolved — PUID/PGID** (see the
   entrypoint under "The Dockerfile is basically ready" above).
 - ~~**Auth before promotion**~~ **Resolved** — feature 0001 landed the
@@ -125,12 +126,21 @@ submitted to the CA app feed. Must encode:
 Sequence it as: ~~**(1)** tighten the Dockerfile (OCI labels, `HEALTHCHECK`,
 PUID/PGID entrypoint)~~ ✅, ~~**(2)** add the tag-triggered multi-arch build-push
 workflow to Docker Hub~~ ✅, ~~**(3)** ship a minimal auth gate (0001)~~ ✅,
-**(4)** author + submit the Unraid CA template. Steps 1–3 have landed; the only
-remaining code/config step before publishing is pushing the `v0.1.0` tag, and
-**(4)** is the last mile to one-click install.
+**(4)** author + submit the Unraid CA template. Steps 1–3 have landed and
+`v0.1.0` is published; **(4)** is the last mile to one-click install.
 
 ## Decision
 
-**Proceeding.** The app is being prepared for a first external release: the
-publishing pipeline and NAS-friendly runtime are in; `v0.1.0` will be the first
-published tag. The Unraid CA template remains to be authored (step 4).
+**Shipped v0.1.0.** The publishing pipeline and NAS-friendly runtime are in and
+`v0.1.0` is live on Docker Hub (verified pull + run + health). The Unraid CA
+template remains to be authored (step 4).
+
+### Note: label/annotation source of truth (metadata-action)
+
+`docker/metadata-action`'s `labels` input does **not** feed the `annotations`
+output — a custom `labels:` block gave the image config a "WebDirStat" title +
+custom description while the manifest annotations still showed the repo name
+(`webdirstat`) + repo description, so the two disagreed. Fix: dropped the custom
+`labels:` block and let the **repo's own name/description/license** drive both
+outputs (one source of truth, self-syncing). The already-published `v0.1.0`
+manifest keeps the minor cosmetic mismatch; the fix lands on the next release.
