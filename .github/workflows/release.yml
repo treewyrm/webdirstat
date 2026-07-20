@@ -33,7 +33,7 @@ jobs:
             type=raw,value=latest
           labels: |
             org.opencontainers.image.title=WebDirStat
-            org.opencontainers.image.description=WinDirStat-style disk-usage visualizer for your NAS — interactive treemap, background scanning.
+            org.opencontainers.image.description=WinDirStat-style disk-usage visualizer for your NAS: interactive treemap with background scanning.
             org.opencontainers.image.licenses=MIT
 
       - uses: docker/build-push-action@v6
