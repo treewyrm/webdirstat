@@ -1,11 +1,16 @@
 services:
   webdirstat:
-    build: .
+    image: treewyrm/webdirstat:latest
+    # To build from source instead of pulling, comment `image:` above and use:
+    # build: .
     ports:
       - "8080:8080"
     environment:
       # Label=host-path pairs, comma separated. Each is mounted read-only below.
       ROOTS: "Media=/data/media,Backups=/data/backups"
+      # uid/gid the app runs as; set to the owner of the webdirstat-db volume.
+      PUID: "1000"
+      PGID: "1000"
       # Optional background schedule (omit for manual-only Start/Stop):
       #   refresh when older than 6h, but only overnight; keep no history.
       SCAN_INTERVAL: "6h"

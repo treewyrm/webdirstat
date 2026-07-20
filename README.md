@@ -1,6 +1,7 @@
 # WebDirStat
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Docker Hub](https://img.shields.io/docker/v/treewyrm/webdirstat?sort=semver&label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/treewyrm/webdirstat)
 
 A WinDirStat-style disk usage visualizer for a NAS, running as a single Docker container.
 
@@ -41,17 +42,30 @@ ROOTS="Data=/some/path" DB_PATH=./data/wds.db CLIENT_DIST=./client/dist node ser
 
 ## Docker
 
+Published on Docker Hub as [`treewyrm/webdirstat`](https://hub.docker.com/r/treewyrm/webdirstat)
+(multi-arch `linux/amd64` + `linux/arm64`; tags `latest`, `X.Y.Z`, `X.Y`):
+
 ```sh
-docker build -t webdirstat .
 docker run -p 8080:8080 \
+  -e PUID=1000 -e PGID=1000 \
   -v /volume1/media:/data:ro \
   -v webdirstat-db:/db \
-  webdirstat
+  treewyrm/webdirstat:latest
 ```
+
+Then open `http://SERVER-IP:8080/` and press **Start** to run the first scan.
 
 Mount the scanned shares **read-only** — the app only ever reads them — but give the store a
 **writable** volume (`DB_PATH` defaults to `/db/webdirstat.db` in the image; never point it at
-the read-only share). See [docker-compose.yml](docker-compose.yml) for a multi-share example.
+the read-only share). Set `PUID`/`PGID` (default `1000`) to the owner of the `/db` volume: the
+container remaps its runtime user to those ids and `chown`s the store on start, so it's writable
+without a manual `chown`. See [docker-compose.yml](docker-compose.yml) for a multi-share example.
+
+To build the image yourself instead of pulling it:
+
+```sh
+docker build -t webdirstat .
+```
 
 ## Configuration (env)
 
@@ -59,6 +73,7 @@ the read-only share). See [docker-compose.yml](docker-compose.yml) for a multi-s
 |---|---|---|
 | `ROOTS` | `Data=/data` | Comma-separated roots. Each is either `Label=/host/path` or a bare `/host/path` (label derived from the basename). Since `=` and `,` are legal in paths, a path with `,` — or an unlabeled path with `=` — must use the `Label=/path` form. |
 | `DB_PATH` | `./data/webdirstat.db` (`/db/webdirstat.db` in Docker) | SQLite store file. Must be on writable storage. |
+| `PUID` / `PGID` | `1000` / `1000` | Docker only: uid/gid the app runs as. Set to the owner of the `/db` volume; the entrypoint remaps the runtime user and `chown`s `/db` on start. |
 | `PORT` / `HOST` | `3000` / `0.0.0.0` (`8080` in Docker) | Listen address. |
 | `CLIENT_DIST` | unset in dev | Directory of the built SPA; when set the server also serves the client. |
 | `SCAN_INTERVAL` | unset | Max-staleness target (e.g. `6h`); a rescan is *wanted* once data is older. |
