@@ -48,7 +48,7 @@ ENV PORT=8080
 ENV HOST=0.0.0.0
 ENV CLIENT_DIST=/app/client-dist
 ENV ROOTS=Data=/data
-# The SQLite store must live on WRITABLE storage — never the read-only scanned share.
+# The SQLite store must live on WRITABLE storage, never the read-only scanned share.
 ENV DB_PATH=/db/webdirstat.db
 
 # The uid/gid the app runs as; NAS users override these to match their appdata owner.

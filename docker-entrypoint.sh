@@ -17,7 +17,7 @@ if [ "$(id -u node)" != "$PUID" ]; then
 fi
 
 # The SQLite store must be writable by the (possibly remapped) runtime user. Only /db
-# is touched — the scanned share (/data) is read-only and never chowned. Recursive so a
+# is touched; the scanned share (/data) is read-only and never chowned. Recursive so a
 # changed PUID between restarts re-takes ownership of the existing db/wal files.
 chown -R node:node /db 2>/dev/null || true
 
