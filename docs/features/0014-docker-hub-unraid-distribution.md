@@ -1,6 +1,8 @@
 # 0014 — Docker Hub image + Unraid Community Applications
 
-Status: **Proposed**
+Status: **In progress** — publishing pipeline (multi-arch release workflow, OCI
+labels) and the PUID/PGID runtime have landed; remaining: push the first `v0.1.0`
+tag to publish, then author the Unraid CA template.
 
 Related: [Dockerfile](../../Dockerfile) (the runtime image this ships),
 [config.ts](../../server/src/config.ts) (the env vars a template must expose),
@@ -51,7 +53,7 @@ feature is almost entirely **packaging, publishing, and defaults** — not app c
 
 ### The Dockerfile is basically ready — small tightening
 
-- Add OCI labels (above).
+- ~~Add OCI labels~~ **Done** (via the workflow's `metadata-action`, above).
 - ~~Add a **`HEALTHCHECK`**~~ **Done.** [Dockerfile](../../Dockerfile) now
   declares a `HEALTHCHECK` hitting a dedicated
   [`GET /api/health`](../../server/src/routes/health.ts) probe (cheaper and more
@@ -103,29 +105,32 @@ submitted to the CA app feed. Must encode:
 
 ## Open questions
 
-- **Registry namespace + image name** — `treewyrm/webdirstat`? Confirm Docker Hub
-  account and whether the repo should be public.
-- **PUID/PGID vs. fixed uid 1000** — adopt the Unraid-idiomatic pattern (leaning
-  yes) or document the fixed user? Affects `/db` write permissions on first run.
+- ~~**Registry namespace + image name**~~ **Resolved** — `treewyrm/webdirstat`;
+  the release workflow targets it. (Confirm the Hub repo exists and is public
+  before the first tag push.)
+- ~~**PUID/PGID vs. fixed uid 1000**~~ **Resolved — PUID/PGID** (see the
+  entrypoint under "The Dockerfile is basically ready" above).
 - ~~**Auth before promotion**~~ **Resolved** — feature 0001 landed the
   `PASSWORD` gate, so exposure is opt-in-safe. Remaining nicety: the CA template
   should default `SESSION_SECRET` to a generated value so logins survive restart.
 - **Multi-root ergonomics** — is "many host shares under one `/data`" enough, or
   do we want first-class multi-volume support in the template? Probably start
   with the single `/data` + subfolders pattern and document it.
-- **Versioning source of truth** — root `package.json` version → git tag → image
-  tag. Wire the workflow to derive image tags from the pushed git tag.
+- ~~**Versioning source of truth**~~ **Resolved** — the workflow derives image
+  tags (`X.Y.Z`, `X.Y`, `latest`) from the pushed git tag via `metadata-action`;
+  first release is `v0.1.0`.
 
 ## Recommendation
 
-Sequence it as: **(1)** tighten the Dockerfile (OCI labels, ~~`HEALTHCHECK`~~ ✅,
-PUID/PGID entrypoint), **(2)** add the tag-triggered multi-arch build-push
-workflow to Docker Hub, ~~**(3)** ship a minimal auth gate (0001)~~ ✅ **done**,
-**(4)** author + submit the Unraid CA template. Steps 1–2 are pure packaging and
-can happen anytime the app is stable; 3 gated the "recommend to others" moment
-and has landed; 4 is the last mile to one-click install.
+Sequence it as: ~~**(1)** tighten the Dockerfile (OCI labels, `HEALTHCHECK`,
+PUID/PGID entrypoint)~~ ✅, ~~**(2)** add the tag-triggered multi-arch build-push
+workflow to Docker Hub~~ ✅, ~~**(3)** ship a minimal auth gate (0001)~~ ✅,
+**(4)** author + submit the Unraid CA template. Steps 1–3 have landed; the only
+remaining code/config step before publishing is pushing the `v0.1.0` tag, and
+**(4)** is the last mile to one-click install.
 
 ## Decision
 
-Not yet decided — deferred until the app is stable enough for external use.
-This doc captures the plan so it survives to that point.
+**Proceeding.** The app is being prepared for a first external release: the
+publishing pipeline and NAS-friendly runtime are in; `v0.1.0` will be the first
+published tag. The Unraid CA template remains to be authored (step 4).
