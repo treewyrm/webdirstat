@@ -21,12 +21,11 @@ feature is almost entirely **packaging, publishing, and defaults** — not app c
 
 ## What's missing today
 
-1. **No published image.** [Dockerfile](../../Dockerfile) builds locally but
-   nothing pushes to a registry, and there's no CI to build it. `ls
-   .github/workflows` is empty.
-2. **No multi-arch build.** Unraid boxes are overwhelmingly `amd64`, but plenty
-   of home NAS/ARM users exist; publish `linux/amd64` + `linux/arm64` so the
-   template "just works" on both.
+1. ~~**No published image.**~~ **CI added** ([`.github/workflows/release.yml`](../../.github/workflows/release.yml)):
+   a `v*` tag push builds and pushes multi-arch to Docker Hub. Still needs the
+   first tag (`v0.1.0`) pushed to actually publish.
+2. ~~**No multi-arch build.**~~ **Done** — the workflow builds `linux/amd64` +
+   `linux/arm64` via QEMU + Buildx so the template "just works" on both.
 3. **No CA template.** Unraid CA needs an XML template (the `<Container>` schema)
    describing ports, volumes, env vars, an icon, and a support/overview blurb.
 4. ~~**No auth.**~~ **Done** (feature 0001). A shared-password gate ships behind
@@ -39,12 +38,15 @@ feature is almost entirely **packaging, publishing, and defaults** — not app c
 
 ### Publishing pipeline
 
-- **GitHub Actions workflow** (`.github/workflows/release.yml`): on tag push
-  (`v*`), `docker/build-push-action` with `platforms: linux/amd64,linux/arm64`,
-  QEMU + Buildx, pushing to Docker Hub (`treewyrm/webdirstat` or similar) with
-  tags `latest`, `X.Y.Z`, and `X.Y`.
-- **Image labels** (`org.opencontainers.image.*`): source, version, license
-  (MIT — already added), description. CA and Unraid's UI surface some of these.
+- ~~**GitHub Actions workflow**~~ **Done** ([`.github/workflows/release.yml`](../../.github/workflows/release.yml)):
+  on tag push (`v*`), `docker/build-push-action` with
+  `platforms: linux/amd64,linux/arm64`, QEMU + Buildx, pushing to Docker Hub
+  (`treewyrm/webdirstat`) with tags `latest`, `X.Y.Z`, and `X.Y`. Needs repo
+  secrets `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN`.
+- ~~**Image labels**~~ **Done** — `docker/metadata-action` injects
+  `org.opencontainers.image.*` (source, revision, version, created auto; plus
+  title/description/licenses set in the workflow). CA and Unraid's UI surface
+  some of these.
 - Consider **GHCR mirror** as well; costs nothing and gives a fallback registry.
 
 ### The Dockerfile is basically ready — small tightening
@@ -57,12 +59,13 @@ feature is almost entirely **packaging, publishing, and defaults** — not app c
   returns **503** if the store is unreachable, so Unraid's UI shows green/red
   correctly). The probe uses Node's global `fetch` rather than `wget` to avoid
   depending on busybox's HTTP-status handling.
-- Confirm the `/db` volume ownership story survives a fresh Unraid install:
-  Unraid bind-mounts host paths and often runs containers with `PUID`/`PGID`
-  conventions. The image currently hardcodes `USER node` (uid 1000). Decide
-  whether to (a) keep uid 1000 and document it, or (b) adopt the
-  LinuxServer.io-style `PUID`/`PGID` + entrypoint `chown` pattern that Unraid
-  users expect. **(b)** is the friendlier NAS default and worth doing here.
+- ~~Confirm the `/db` volume ownership story…~~ **Done — adopted (b).** The image
+  now ships [`docker-entrypoint.sh`](../../docker-entrypoint.sh): it starts as
+  root, remaps the `node` user/group to `PUID`/`PGID` (default 1000) via
+  `usermod`/`groupmod` (shadow), `chown -R`s `/db`, then drops to `node` via
+  `su-exec`. `/data` (read-only) is never chowned. Verified that a custom
+  `PUID=1500 PGID=1600` remaps the process, takes `/db` ownership, and boots
+  (health 200).
 
 ### Unraid CA template (`webdirstat.xml`)
 

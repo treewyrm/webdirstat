@@ -35,6 +35,9 @@ FROM node:24-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 
+# su-exec: drop privileges after the entrypoint remaps ids. shadow: usermod/groupmod.
+RUN apk add --no-cache su-exec shadow
+
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=prod-deps /app/server/node_modules ./server/node_modules
 COPY --from=prod-deps /app/shared ./shared
@@ -48,8 +51,12 @@ ENV ROOTS=Data=/data
 # The SQLite store must live on WRITABLE storage — never the read-only scanned share.
 ENV DB_PATH=/db/webdirstat.db
 
-# Writable store dir, owned by the unprivileged runtime user before it becomes a volume.
-RUN mkdir -p /db && chown node:node /db
+# The uid/gid the app runs as; NAS users override these to match their appdata owner.
+ENV PUID=1000
+ENV PGID=1000
+
+# Writable store dir; the entrypoint chowns it to the (possibly remapped) runtime user.
+RUN mkdir -p /db
 
 EXPOSE 8080
 # /data: read-only scanned share(s). /db: writable store.
@@ -60,5 +67,8 @@ VOLUME ["/data", "/db"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-USER node
+# Entrypoint runs as root to remap ids + chown /db, then su-execs into the node process.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "server/dist/index.js"]
